@@ -1594,6 +1594,11 @@ main {
     color: #f87171;
 }
 
+.toast-warning {
+    border-color: #f59e0b;
+    color: #fbbf24;
+}
+
 /* Success button state */
 .btn-success {
     background: #10b981 !important;

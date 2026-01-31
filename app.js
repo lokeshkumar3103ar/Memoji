@@ -70,8 +70,26 @@ const state = {
     analysisCount: 0,
     capturedImage: null,
     hasConsent: localStorage.getItem('memoji_consent') === 'accepted',
-    isOnline: navigator.onLine // Track network status
+    isOnline: navigator.onLine, // Track network status
+    memeAudio: null // Sound effect audio element
 };
+
+// Preload meme sound effects
+const memeSounds = [
+    'assets/faaah.mp3',
+    'assets/vine-boom-sound-meme.mp3'
+];
+
+function playMemeSound() {
+    try {
+        const randomSound = memeSounds[Math.floor(Math.random() * memeSounds.length)];
+        const audio = new Audio(randomSound);
+        audio.volume = 0.5;
+        audio.play().catch(() => {}); // Silently fail if autoplay blocked
+    } catch (e) {
+        // Sound not critical, ignore errors
+    }
+}
 
 // ============================================
 // 🧹 Cleanup & Lifecycle Management
@@ -515,7 +533,7 @@ function showError(title, message, canRetry = true) {
             <h3>${title}</h3>
             ${message}
             <div class="error-actions">
-                ${canRetry ? '<button class="btn btn-primary" onclick="retryCamera()">🔄 Try Again</button>' : ''}
+                ${canRetry ? '<button class="btn btn-primary" onclick="retryCamera()">Try Again</button>' : ''}
                 <button class="btn btn-outline" onclick="openPrivacy()">Privacy Policy</button>
             </div>
         </div>
@@ -592,7 +610,7 @@ function showMemeError() {
 
 function startFaceDetection() {
     if (state.faceDetectionInterval) clearInterval(state.faceDetectionInterval);
-    state.faceDetectionInterval = setInterval(detectFace, 150);
+    state.faceDetectionInterval = setInterval(detectFace, 350); // 350ms for better battery life
 }
 
 async function detectFace() {
@@ -656,9 +674,12 @@ async function snapPhoto() {
     
     console.log('\n📸 ====== SNAP! Photo Mode Triggered ======');
     
+    // Camera SVG icon for button states
+    const cameraIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
+    
     // Visual feedback - disable button
     if (elements.snapBtn) {
-        elements.snapBtn.textContent = '⏳ Analyzing...';
+        elements.snapBtn.innerHTML = `${cameraIcon} Analyzing...`;
         elements.snapBtn.disabled = true;
         elements.snapBtn.classList.remove('pulse');
     }
@@ -685,7 +706,8 @@ async function snapPhoto() {
     
     // Reset button
     if (elements.snapBtn) {
-        elements.snapBtn.textContent = 'SNAP!';
+        const cameraIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
+        elements.snapBtn.innerHTML = `${cameraIcon} SNAP!`;
         elements.snapBtn.disabled = false;
         elements.snapBtn.classList.add('pulse');
     }
@@ -745,14 +767,40 @@ async function handleImageUpload(event) {
     showLoadingState();
     
     try {
-        // Read file as base64
+        // Read file and resize for API (max 800px)
         const base64Image = await new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => {
-                // Store for saving result
-                state.capturedImage = new Image();
-                state.capturedImage.src = reader.result;
-                resolve(reader.result.split(',')[1]);
+                const img = new Image();
+                img.onload = () => {
+                    // Resize to max 800px
+                    const maxDim = 800;
+                    let targetWidth = img.width;
+                    let targetHeight = img.height;
+                    
+                    if (targetWidth > maxDim || targetHeight > maxDim) {
+                        const scale = Math.min(maxDim / targetWidth, maxDim / targetHeight);
+                        targetWidth = Math.round(targetWidth * scale);
+                        targetHeight = Math.round(targetHeight * scale);
+                    }
+                    
+                    const canvas = document.createElement('canvas');
+                    canvas.width = targetWidth;
+                    canvas.height = targetHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+                    
+                    const resizedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                    
+                    // Store for saving result
+                    state.capturedImage = new Image();
+                    state.capturedImage.src = resizedDataUrl;
+                    
+                    console.log(`   📐 Resized: ${img.width}x${img.height} → ${targetWidth}x${targetHeight}`);
+                    resolve(resizedDataUrl.split(',')[1]);
+                };
+                img.onerror = reject;
+                img.src = reader.result;
             };
             reader.onerror = reject;
             reader.readAsDataURL(file);
@@ -848,13 +896,25 @@ async function analyzeWithVLM() {
         // STEP 1: Capture frame
         console.log(`\n🖼️ [STEP 1] Capturing webcam frame...`);
         const frameCanvas = document.createElement('canvas');
-        frameCanvas.width = elements.video.videoWidth;
-        frameCanvas.height = elements.video.videoHeight;
+        
+        // Resize to max 800px to reduce API payload and improve performance
+        const maxDim = 800;
+        let targetWidth = elements.video.videoWidth;
+        let targetHeight = elements.video.videoHeight;
+        
+        if (targetWidth > maxDim || targetHeight > maxDim) {
+            const scale = Math.min(maxDim / targetWidth, maxDim / targetHeight);
+            targetWidth = Math.round(targetWidth * scale);
+            targetHeight = Math.round(targetHeight * scale);
+        }
+        
+        frameCanvas.width = targetWidth;
+        frameCanvas.height = targetHeight;
         const ctx = frameCanvas.getContext('2d');
         
         ctx.save();
         ctx.scale(-1, 1);
-        ctx.drawImage(elements.video, -frameCanvas.width, 0);
+        ctx.drawImage(elements.video, -frameCanvas.width, 0, frameCanvas.width, frameCanvas.height);
         ctx.restore();
         
         const imageDataUrl = frameCanvas.toDataURL('image/jpeg', 0.7);
@@ -1035,6 +1095,9 @@ async function searchTenor(query, analysisId) {
             if (gifUrl) {
                 state.lastMemeQuery = query;
                 state.lastMemeUrl = gifUrl;
+                
+                // Play sound BEFORE setting src - sound leads the visual
+                playMemeSound();
                 
                 // Set crossOrigin BEFORE setting src to enable CORS
                 elements.memeImage.crossOrigin = 'anonymous';
