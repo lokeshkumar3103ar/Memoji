@@ -6,6 +6,46 @@
 // Get config from config.js
 const getConfig = () => window.APP_CONFIG || {};
 
+// ============================================
+// 🔐 Encryption Utilities (AES-like XOR for client-side)
+// ============================================
+const ENCRYPTION_KEY = 'memoji_secure_2026'; // Simple obfuscation key
+const STORAGE_EXPIRY_DAYS = 7;
+const MAX_HISTORY_ITEMS = 10;
+
+function encryptData(data) {
+    const jsonStr = JSON.stringify(data);
+    let encrypted = '';
+    for (let i = 0; i < jsonStr.length; i++) {
+        encrypted += String.fromCharCode(
+            jsonStr.charCodeAt(i) ^ ENCRYPTION_KEY.charCodeAt(i % ENCRYPTION_KEY.length)
+        );
+    }
+    return btoa(encrypted); // Base64 encode
+}
+
+function decryptData(encryptedStr) {
+    try {
+        const decoded = atob(encryptedStr);
+        let decrypted = '';
+        for (let i = 0; i < decoded.length; i++) {
+            decrypted += String.fromCharCode(
+                decoded.charCodeAt(i) ^ ENCRYPTION_KEY.charCodeAt(i % ENCRYPTION_KEY.length)
+            );
+        }
+        return JSON.parse(decrypted);
+    } catch (e) {
+        console.warn('Failed to decrypt data, returning empty');
+        return [];
+    }
+}
+
+function isExpired(timestamp) {
+    const expiryDate = new Date(timestamp);
+    expiryDate.setDate(expiryDate.getDate() + STORAGE_EXPIRY_DAYS);
+    return new Date() > expiryDate;
+}
+
 // Emoji mapping for sidebar display
 const EMOJI_MAP = {
     neutral: '😐',
@@ -25,13 +65,57 @@ const state = {
     currentEmotion: 'neutral',
     lastCaption: '',
     lastMemeQuery: '',
+    lastMemeUrl: '',
     faceDetectionInterval: null,
     analysisCount: 0,
-    capturedImage: null
+    capturedImage: null,
+    hasConsent: localStorage.getItem('memoji_consent') === 'accepted'
 };
 
 // DOM Elements
 let elements = {};
+
+// ============================================
+// Consent Management
+// ============================================
+
+function checkConsent() {
+    return localStorage.getItem('memoji_consent') === 'accepted';
+}
+
+function showConsentBanner() {
+    if (elements.consentBanner) {
+        elements.consentBanner.classList.remove('hidden');
+    }
+}
+
+function hideConsentBanner() {
+    if (elements.consentBanner) {
+        elements.consentBanner.classList.add('hidden');
+    }
+}
+
+function acceptConsent() {
+    localStorage.setItem('memoji_consent', 'accepted');
+    state.hasConsent = true;
+    hideConsentBanner();
+    startAppAfterConsent();
+}
+
+function declineConsent() {
+    hideConsentBanner();
+    // Show declined message
+    if (elements.app) {
+        elements.app.innerHTML = `
+            <div class="declined-state">
+                <h2>😔 Consent Required</h2>
+                <p>Memoji requires camera access and AI processing to work. Without consent, we cannot provide the service.</p>
+                <button class="btn btn-primary" onclick="location.reload()">Try Again</button>
+                <p style="margin-top: 1rem;"><a href="#" onclick="openPrivacy(); return false;">Read our Privacy Policy</a></p>
+            </div>
+        `;
+    }
+}
 
 // ============================================
 // Initialization
@@ -67,15 +151,46 @@ async function init() {
         galleryModal: document.getElementById('gallery-modal'),
         galleryGrid: document.getElementById('gallery-grid'),
         closeGalleryBtn: document.getElementById('close-gallery-btn'),
+        clearAllBtn: document.getElementById('clear-all-btn'),
+        storageInfo: document.getElementById('storage-info'),
         galleryLink: document.getElementById('nav-gallery'),
         createLink: document.getElementById('nav-create'),
         // About Elements
         aboutModal: document.getElementById('about-modal'),
         closeAboutBtn: document.getElementById('close-about-btn'),
-        aboutLink: document.getElementById('nav-about')
+        aboutLink: document.getElementById('nav-about'),
+        // Privacy Elements
+        privacyModal: document.getElementById('privacy-modal'),
+        closePrivacyBtn: document.getElementById('close-privacy-btn'),
+        privacyLink: document.getElementById('nav-privacy'),
+        // Consent Elements
+        consentBanner: document.getElementById('consent-banner'),
+        consentAccept: document.getElementById('consent-accept'),
+        consentDecline: document.getElementById('consent-decline'),
+        consentPrivacyLink: document.getElementById('consent-privacy-link')
     };
 
     const CONFIG = getConfig();
+    
+    // Setup consent listeners first
+    setupConsentListeners();
+    
+    // Check if user has already given consent
+    if (!checkConsent()) {
+        // Load models in background but don't start camera
+        updateLoadingStatus('Loading face detection...', 10);
+        await loadModels();
+        updateLoadingStatus('Awaiting consent...', 100);
+        
+        setTimeout(() => {
+            elements.loadingScreen.classList.add('hidden');
+            elements.app.classList.remove('hidden');
+            showConsentBanner();
+        }, 500);
+        
+        setupEventListeners();
+        return;
+    }
     
     try {
         if (!CONFIG.AZURE_OPENAI_ENDPOINT || CONFIG.AZURE_OPENAI_ENDPOINT === "YOUR_ENDPOINT_HERE") {
@@ -87,21 +202,73 @@ async function init() {
         await loadModels();
         
         updateLoadingStatus('Starting camera...', 50);
-        await startCamera();
         
-        updateLoadingStatus('Ready! Click SNAP! 📸', 100);
+        // Try to start camera, but don't fail if it doesn't work
+        let cameraStarted = false;
+        try {
+            await startCamera();
+            cameraStarted = true;
+            updateLoadingStatus('Ready! Click SNAP! 📸', 100);
+        } catch (camError) {
+            console.warn('Camera failed to start:', camError);
+            updateLoadingStatus('Camera unavailable - check permissions', 100);
+            // handleCameraError is already called inside startCamera
+        }
         
         setTimeout(() => {
             elements.loadingScreen.classList.add('hidden');
             elements.app.classList.remove('hidden');
-            startApp();
+            if (cameraStarted) {
+                startApp();
+            }
         }, 500);
         
         setupEventListeners();
+        cleanupExpiredHistory();
         
     } catch (error) {
         console.error('Init error:', error);
         updateLoadingStatus(`Error: ${error.message}`, 0);
+        
+        // Still show the app so user can see error message
+        setTimeout(() => {
+            elements.loadingScreen.classList.add('hidden');
+            elements.app.classList.remove('hidden');
+            showError('⚠️ Initialization Error', `<p>${error.message}</p><p>Please refresh the page to try again.</p>`, true);
+        }, 1000);
+    }
+}
+
+async function startAppAfterConsent() {
+    const CONFIG = getConfig();
+    
+    try {
+        if (!CONFIG.AZURE_OPENAI_ENDPOINT || CONFIG.AZURE_OPENAI_ENDPOINT === "YOUR_ENDPOINT_HERE") {
+            CONFIG.ENABLE_VLM = false;
+        }
+        
+        await startCamera();
+        startApp();
+        cleanupExpiredHistory();
+    } catch (error) {
+        console.error('Start error:', error);
+        // Error UI is already shown by handleCameraError
+        // Don't use alert, the error display is already visible
+    }
+}
+
+function setupConsentListeners() {
+    if (elements.consentAccept) {
+        elements.consentAccept.addEventListener('click', acceptConsent);
+    }
+    if (elements.consentDecline) {
+        elements.consentDecline.addEventListener('click', declineConsent);
+    }
+    if (elements.consentPrivacyLink) {
+        elements.consentPrivacyLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            openPrivacy();
+        });
     }
 }
 
@@ -154,23 +321,163 @@ async function loadModels() {
 // ============================================
 
 async function startCamera() {
-    const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
-    });
+    try {
+        // Check if getUserMedia is supported
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error('Camera not supported on this browser');
+        }
+        
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
+        });
+        
+        elements.video.srcObject = stream;
+        
+        await new Promise(resolve => {
+            elements.video.onloadedmetadata = () => {
+                elements.video.play();
+                resolve();
+            };
+        });
+        
+        elements.overlayCanvas.width = elements.video.videoWidth;
+        elements.overlayCanvas.height = elements.video.videoHeight;
+        
+        console.log('✅ Camera started');
+        hideError(); // Clear any previous errors
+        
+    } catch (error) {
+        console.error('Camera error:', error);
+        handleCameraError(error);
+        throw error; // Re-throw to be caught by caller
+    }
+}
+
+function handleCameraError(error) {
+    let title = '📷 Camera Access Required';
+    let message = '';
+    let canRetry = true;
     
-    elements.video.srcObject = stream;
+    if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        message = `
+            <p>Camera permission was denied. To use Memoji, please:</p>
+            <ol>
+                <li>Click the camera/lock icon in your browser's address bar</li>
+                <li>Allow camera access for this site</li>
+                <li>Refresh the page</li>
+            </ol>
+            <p class="error-hint">On mobile: Check your browser settings → Site Settings → Camera</p>
+        `;
+    } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+        title = '📷 No Camera Found';
+        message = '<p>No camera was detected on your device. Please connect a webcam and try again.</p>';
+    } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+        title = '📷 Camera In Use';
+        message = '<p>Your camera is being used by another application. Please close other apps using the camera and try again.</p>';
+    } else if (error.name === 'OverconstrainedError') {
+        message = '<p>Camera requirements could not be met. Trying with default settings...</p>';
+        // Try again with simpler constraints
+        trySimpleCamera();
+        return;
+    } else if (error.message === 'Camera not supported on this browser') {
+        title = '🌐 Browser Not Supported';
+        message = '<p>Your browser does not support camera access. Please try using Chrome, Firefox, Safari, or Edge.</p>';
+        canRetry = false;
+    } else {
+        message = `<p>Failed to access camera: ${error.message || 'Unknown error'}</p>`;
+    }
     
-    await new Promise(resolve => {
-        elements.video.onloadedmetadata = () => {
-            elements.video.play();
-            resolve();
-        };
-    });
+    showError(title, message, canRetry);
+}
+
+async function trySimpleCamera() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        elements.video.srcObject = stream;
+        await new Promise(resolve => {
+            elements.video.onloadedmetadata = () => {
+                elements.video.play();
+                resolve();
+            };
+        });
+        elements.overlayCanvas.width = elements.video.videoWidth;
+        elements.overlayCanvas.height = elements.video.videoHeight;
+        console.log('✅ Camera started (simple mode)');
+        hideError();
+    } catch (e) {
+        handleCameraError(e);
+    }
+}
+
+// ============================================
+// Error UI Management
+// ============================================
+
+function showError(title, message, canRetry = true) {
+    // Create or update error display in meme panel area
+    let errorDiv = document.getElementById('error-display');
     
-    elements.overlayCanvas.width = elements.video.videoWidth;
-    elements.overlayCanvas.height = elements.video.videoHeight;
+    if (!errorDiv) {
+        errorDiv = document.createElement('div');
+        errorDiv.id = 'error-display';
+        errorDiv.className = 'error-display';
+        
+        // Insert after video wrapper or in a visible area
+        const workspace = document.querySelector('.workspace');
+        if (workspace) {
+            workspace.insertAdjacentElement('afterbegin', errorDiv);
+        } else {
+            document.body.appendChild(errorDiv);
+        }
+    }
     
-    console.log('✅ Camera started');
+    errorDiv.innerHTML = `
+        <div class="error-content">
+            <h3>${title}</h3>
+            ${message}
+            <div class="error-actions">
+                ${canRetry ? '<button class="btn btn-primary" onclick="retryCamera()">🔄 Try Again</button>' : ''}
+                <button class="btn btn-outline" onclick="openPrivacy()">Privacy Policy</button>
+            </div>
+        </div>
+    `;
+    errorDiv.classList.remove('hidden');
+    
+    // Also show toast notification
+    showToast(title.replace(/[📷🌐]/g, '').trim(), 'error');
+}
+
+function hideError() {
+    const errorDiv = document.getElementById('error-display');
+    if (errorDiv) {
+        errorDiv.classList.add('hidden');
+    }
+}
+
+function retryCamera() {
+    hideError();
+    startCamera().catch(() => {}); // Error will be handled inside
+}
+
+// Toast notifications for user feedback
+function showToast(message, type = 'info') {
+    // Remove existing toast
+    const existingToast = document.querySelector('.toast-notification');
+    if (existingToast) existingToast.remove();
+    
+    const toast = document.createElement('div');
+    toast.className = `toast-notification toast-${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // Animate in
+    setTimeout(() => toast.classList.add('show'), 10);
+    
+    // Remove after 4 seconds
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
 }
 
 // ============================================
@@ -584,6 +891,10 @@ async function searchTenor(query, analysisId) {
             
             if (gifUrl) {
                 state.lastMemeQuery = query;
+                state.lastMemeUrl = gifUrl;
+                
+                // Set crossOrigin BEFORE setting src to enable CORS
+                elements.memeImage.crossOrigin = 'anonymous';
                 elements.memeImage.src = gifUrl;
                 elements.memeImage.classList.add('visible');
                 elements.memePlaceholder.classList.add('hidden');
@@ -709,55 +1020,221 @@ function capturePhoto() {
 }
 
 function downloadPhoto() {
-    const link = document.createElement('a');
-    link.download = `meme-mood-${Date.now()}.png`;
-    link.href = elements.captureCanvas.toDataURL('image/png');
-    link.click();
+    try {
+        // Method 1: Try using Blob URL (most reliable)
+        elements.captureCanvas.toBlob((blob) => {
+            if (!blob) {
+                fallbackDownload();
+                return;
+            }
+            
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.download = `memoji-roast-${Date.now()}.png`;
+            link.href = url;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            
+            // Use click() with a small delay for Safari
+            setTimeout(() => {
+                link.click();
+                // Cleanup
+                setTimeout(() => {
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                }, 100);
+            }, 0);
+            
+            // Visual feedback
+            showDownloadSuccess();
+        }, 'image/png');
+        
+    } catch (e) {
+        console.error('Download error:', e);
+        fallbackDownload();
+    }
+}
+
+function fallbackDownload() {
+    try {
+        // Method 2: Data URL approach
+        const dataUrl = elements.captureCanvas.toDataURL('image/png');
+        
+        // For iOS/Safari, try opening in new tab
+        if (/iPad|iPhone|iPod/.test(navigator.userAgent) || 
+            (navigator.userAgent.includes('Safari') && !navigator.userAgent.includes('Chrome'))) {
+            // Open image in new tab - user can long-press to save
+            const newTab = window.open();
+            if (newTab) {
+                newTab.document.write(`
+                    <html><head><title>Memoji - Save Image</title></head>
+                    <body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#111;">
+                        <div style="text-align:center;color:white;font-family:sans-serif;">
+                            <p>Long-press (mobile) or right-click (desktop) the image to save:</p>
+                            <img src="${dataUrl}" style="max-width:100%;border-radius:8px;margin-top:1rem;" />
+                        </div>
+                    </body></html>
+                `);
+                newTab.document.close();
+                showToast('Image opened in new tab - save from there', 'info');
+                return;
+            }
+        }
+        
+        // Standard download
+        const link = document.createElement('a');
+        link.download = `memoji-roast-${Date.now()}.png`;
+        link.href = dataUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        showDownloadSuccess();
+    } catch (e2) {
+        console.error('Fallback download error:', e2);
+        showToast('Download failed - try right-clicking the image', 'error');
+    }
+}
+
+function showDownloadSuccess() {
+    if (elements.downloadBtn) {
+        const btn = elements.downloadBtn;
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '✅ Saved!';
+        setTimeout(() => { btn.innerHTML = originalHTML; }, 2000);
+    }
+    showToast('Image saved!', 'success');
 }
 
 async function sharePhoto() {
     try {
-        const blob = await new Promise(r => elements.captureCanvas.toBlob(r, 'image/png'));
-        const file = new File([blob], 'meme-mood.png', { type: 'image/png' });
+        // Generate blob from canvas
+        const blob = await new Promise((resolve, reject) => {
+            elements.captureCanvas.toBlob((b) => {
+                if (b) resolve(b);
+                else reject(new Error('Failed to create blob'));
+            }, 'image/png');
+        });
         
-        // Native Share API (Mobile: WhatsApp, Mail, etc. depending on installed apps)
-        if (navigator.share && navigator.canShare({ files: [file] })) {
+        const file = new File([blob], 'memoji-roast.png', { type: 'image/png' });
+        
+        // Check if Web Share API is available and supports files
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
             await navigator.share({
                 files: [file],
-                title: 'My Meme Mood Match!',
+                title: 'My Memoji Roast!',
                 text: state.lastCaption ? `"${state.lastCaption}" 🎭 Created with Memoji` : 'Check my meme match! 🎭 Created with Memoji'
             });
-        } else {
-            // Fallback for Desktop (Manual Options)
-            // Create mailto link
-            const subject = encodeURIComponent("Check out my Memoji Roast! 🎭");
-            const body = encodeURIComponent(`I just got roasted by Memoji AI!\n\n"${state.lastCaption || ''}"\n\n(Attach the downloaded image to share)`);
-            
-            // Allow user to choose
-            const choice = confirm("Native sharing not available on this device.\n\nType OK to Open Email Draft.\nCancel to Download Image (for WhatsApp Web/Drive).");
-            
-            if (choice) {
-                 window.open(`mailto:?subject=${subject}&body=${body}`);
-                 downloadPhoto(); // Auto download so they can attach it
-            } else {
-                 downloadPhoto();
-            }
+            return;
         }
+        
+        // Fallback: Try share without files (URL/text only)
+        if (navigator.share) {
+            await navigator.share({
+                title: 'My Memoji Roast!',
+                text: state.lastCaption ? `"${state.lastCaption}" 🎭 Check out Memoji - AI Meme Generator!` : 'Check out Memoji - AI Meme Generator!',
+                url: window.location.href
+            });
+            // Also download so they can attach it
+            downloadPhoto();
+            return;
+        }
+        
+        // Desktop fallback - show options
+        showShareOptions();
+        
     } catch (e) {
+        if (e.name === 'AbortError') {
+            // User cancelled share - this is fine
+            return;
+        }
         console.error('Share error:', e);
-        downloadPhoto();
+        showShareOptions();
+    }
+}
+
+function showShareOptions() {
+    const subject = encodeURIComponent("Check out my Memoji Roast! 🎭");
+    const body = encodeURIComponent(`I just got roasted by Memoji AI!\n\n"${state.lastCaption || ''}"\n\nTry it yourself: ${window.location.href}`);
+    
+    const choice = confirm(
+        "Share options:\n\n" +
+        "• Click OK to download image + open email\n" +
+        "• Click Cancel to just download image\n\n" +
+        "(You can then share the downloaded image on WhatsApp, Instagram, etc.)"
+    );
+    
+    downloadPhoto();
+    
+    if (choice) {
+        window.open(`mailto:?subject=${subject}&body=${body}`);
     }
 }
 
 async function copyPhoto() {
+    // Check if Clipboard API with images is supported
+    const hasClipboardAPI = navigator.clipboard && typeof ClipboardItem !== 'undefined';
+    
+    if (hasClipboardAPI) {
+        try {
+            const blob = await new Promise((resolve, reject) => {
+                elements.captureCanvas.toBlob((b) => {
+                    if (b) resolve(b);
+                    else reject(new Error('Failed to create blob'));
+                }, 'image/png');
+            });
+            
+            await navigator.clipboard.write([
+                new ClipboardItem({ 'image/png': blob })
+            ]);
+            
+            // Visual feedback
+            showCopySuccess();
+            return;
+            
+        } catch (err) {
+            console.warn('Clipboard API failed:', err);
+            // Fall through to fallback
+        }
+    }
+    
+    // Fallback: Copy data URL as text (user can paste in some apps)
     try {
-        const blob = await new Promise(r => elements.captureCanvas.toBlob(r, 'image/png'));
+        const dataUrl = elements.captureCanvas.toDataURL('image/png');
         
-        await navigator.clipboard.write([
-            new ClipboardItem({ 'image/png': blob })
-        ]);
+        // Try copying text to clipboard
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(dataUrl);
+            showToast('Image URL copied! Paste in compatible apps.', 'info');
+            showCopySuccess();
+            return;
+        }
         
-        // Visual feedback
+        // Legacy fallback using execCommand
+        const textArea = document.createElement('textarea');
+        textArea.value = dataUrl;
+        textArea.style.cssText = 'position:fixed;left:-9999px;';
+        document.body.appendChild(textArea);
+        textArea.select();
+        
+        const success = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        
+        if (success) {
+            showToast('Image data copied!', 'info');
+            showCopySuccess();
+        } else {
+            throw new Error('execCommand failed');
+        }
+        
+    } catch (fallbackErr) {
+        console.error('All copy methods failed:', fallbackErr);
+        showCopyFailed();
+    }
+}
+
+function showCopySuccess() {
+    if (elements.copyBtn) {
         const btn = elements.copyBtn;
         const originalContent = btn.innerHTML;
         btn.innerHTML = 'Copied! ✅';
@@ -767,10 +1244,16 @@ async function copyPhoto() {
             btn.innerHTML = originalContent;
             btn.classList.remove('btn-success');
         }, 2000);
-        
-    } catch (err) {
-        console.error('Failed to copy:', err);
-        alert('Copy not supported on this browser. Try Download instead.');
+    }
+}
+
+function showCopyFailed() {
+    showToast('Copy not supported - use Download instead', 'error');
+    
+    // Highlight download button as alternative
+    if (elements.downloadBtn) {
+        elements.downloadBtn.classList.add('pulse');
+        setTimeout(() => elements.downloadBtn.classList.remove('pulse'), 2000);
     }
 }
 
@@ -779,16 +1262,58 @@ function closeModal() {
 }
 
 // ============================================
-// 🖼️ Gallery Logic (LocalStorage)
+// 🖼️ Gallery Logic (Encrypted LocalStorage with Expiration)
 // ============================================
+
+function cleanupExpiredHistory() {
+    let history = getHistory();
+    const validHistory = history.filter(item => !isExpired(item.timestamp));
+    
+    if (validHistory.length !== history.length) {
+        console.log(`🧹 Cleaned up ${history.length - validHistory.length} expired items`);
+        saveHistory(validHistory);
+    }
+}
+
+function getHistory() {
+    const encrypted = localStorage.getItem('memoji_history_v2');
+    if (!encrypted) {
+        // Migrate from old unencrypted storage
+        const oldHistory = localStorage.getItem('memoji_history');
+        if (oldHistory) {
+            try {
+                const parsed = JSON.parse(oldHistory);
+                saveHistory(parsed);
+                localStorage.removeItem('memoji_history');
+                return parsed;
+            } catch (e) {
+                return [];
+            }
+        }
+        return [];
+    }
+    return decryptData(encrypted);
+}
+
+function saveHistory(history) {
+    const encrypted = encryptData(history);
+    try {
+        localStorage.setItem('memoji_history_v2', encrypted);
+    } catch (e) {
+        console.warn('⚠️ Storage full, clearing older items');
+        history = history.slice(0, Math.floor(history.length / 2));
+        localStorage.setItem('memoji_history_v2', encryptData(history));
+    }
+}
 
 function saveToHistory(caption, memeUrl) {
     if (!caption || !memeUrl) return;
 
     let userImage = null;
-    // Save the captured image data URL if available
+    // Save the captured image data URL if available (compressed)
     if (state.capturedImage && state.capturedImage.src) {
-        userImage = state.capturedImage.src;
+        // Compress image to reduce storage
+        userImage = compressImage(state.capturedImage.src);
     }
 
     const historyItem = {
@@ -799,32 +1324,79 @@ function saveToHistory(caption, memeUrl) {
         userImage: userImage
     };
 
-    let history = JSON.parse(localStorage.getItem('memoji_history') || '[]');
-    history.unshift(historyItem); // Add to top
+    let history = getHistory();
     
-    // Limit to last 10 items to prevent LocalStorage quota issues (photos are large)
-    if (history.length > 10) history = history.slice(0, 10);
+    // Avoid duplicates (same caption within 5 seconds)
+    const recentDuplicate = history.find(h => 
+        h.caption === caption && 
+        (Date.now() - new Date(h.timestamp).getTime()) < 5000
+    );
+    if (recentDuplicate) return;
     
-    try {
-        localStorage.setItem('memoji_history', JSON.stringify(history));
-        console.log('💾 Saved to history');
-    } catch (e) {
-        console.warn('⚠️ Storage full, clearing old history');
-        history = history.slice(0, 5); // Fallback: clear half
-        try {
-            localStorage.setItem('memoji_history', JSON.stringify(history));
-        } catch (retryError) {
-            console.error('❌ Could not save to history even after clearing');
-        }
+    history.unshift(historyItem);
+    
+    // Limit to max items
+    if (history.length > MAX_HISTORY_ITEMS) {
+        history = history.slice(0, MAX_HISTORY_ITEMS);
+    }
+    
+    saveHistory(history);
+    console.log('💾 Saved to history (encrypted)');
+    updateStorageInfo();
+}
+
+function compressImage(dataUrl) {
+    // For now, just return as-is (could add canvas compression later)
+    // This helps with very large images
+    if (dataUrl && dataUrl.length > 500000) {
+        // Skip storing very large images to save space
+        return null;
+    }
+    return dataUrl;
+}
+
+function deleteHistoryItem(id) {
+    let history = getHistory();
+    history = history.filter(item => item.id !== id);
+    saveHistory(history);
+    loadGallery();
+    console.log(`🗑️ Deleted item ${id}`);
+}
+
+function clearAllHistory() {
+    if (confirm('Are you sure you want to delete all your roast history? This cannot be undone.')) {
+        localStorage.removeItem('memoji_history_v2');
+        localStorage.removeItem('memoji_history');
+        loadGallery();
+        console.log('🗑️ Cleared all history');
+    }
+}
+
+function updateStorageInfo() {
+    const history = getHistory();
+    const oldestItem = history[history.length - 1];
+    let expiryText = '';
+    
+    if (oldestItem) {
+        const expiryDate = new Date(oldestItem.timestamp);
+        expiryDate.setDate(expiryDate.getDate() + STORAGE_EXPIRY_DAYS);
+        const daysLeft = Math.ceil((expiryDate - new Date()) / (1000 * 60 * 60 * 24));
+        expiryText = ` • Oldest expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`;
+    }
+    
+    if (elements.storageInfo) {
+        elements.storageInfo.textContent = `Storage: ${history.length}/${MAX_HISTORY_ITEMS} items${expiryText}`;
     }
 }
 
 function loadGallery() {
-    const history = JSON.parse(localStorage.getItem('memoji_history') || '[]');
+    cleanupExpiredHistory();
+    const history = getHistory();
     const grid = elements.galleryGrid;
     
     if (!grid) return;
     grid.innerHTML = '';
+    updateStorageInfo();
 
     if (history.length === 0) {
         grid.innerHTML = `
@@ -837,7 +1409,10 @@ function loadGallery() {
     history.forEach(item => {
         const div = document.createElement('div');
         div.className = 'gallery-item';
-        div.onclick = () => showInMainView(item);
+        
+        // Format date
+        const date = new Date(item.timestamp);
+        const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         
         // Build image HTML
         let imagesHtml = '';
@@ -847,27 +1422,55 @@ function loadGallery() {
         imagesHtml += `<img src="${item.memeUrl}" class="gallery-thumb meme-thumb" alt="Meme" loading="lazy">`;
         
         div.innerHTML = `
-            <div class="gallery-images-pair">
+            <div class="gallery-item-actions">
+                <button class="gallery-action-btn" onclick="event.stopPropagation(); retryHistoryItem(${item.id})" title="Retry">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                </button>
+                <button class="gallery-action-btn delete" onclick="event.stopPropagation(); deleteHistoryItem(${item.id})" title="Delete">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+            </div>
+            <div class="gallery-images-pair" onclick="showInMainView(${JSON.stringify(item).replace(/"/g, '&quot;')})">
                 ${imagesHtml}
             </div>
             <div class="gallery-caption">"${item.caption}"</div>
+            <div class="gallery-item-date">${dateStr}</div>
         `;
         grid.appendChild(div);
     });
 }
 
+function retryHistoryItem(id) {
+    const history = getHistory();
+    const item = history.find(h => h.id === id);
+    if (item) {
+        showInMainView(item);
+        closeGallery();
+        // Trigger a new snap after showing the item
+        setTimeout(() => snapPhoto(), 500);
+    }
+}
+
 function showInMainView(item) {
+    // Handle both object and stringified object
+    const data = typeof item === 'string' ? JSON.parse(item) : item;
+    
     // Load a history item back into the main view
-    updateCaption(item.caption);
-    elements.memeImage.src = item.memeUrl;
+    updateCaption(data.caption);
+    
+    // Set crossOrigin BEFORE src to enable CORS for canvas export
+    elements.memeImage.crossOrigin = 'anonymous';
+    elements.memeImage.src = data.memeUrl;
     elements.memeImage.classList.add('visible');
     elements.memePlaceholder.classList.add('hidden');
     
     // Restore the captured user image state so "Save Result" works with this photo
-    if (item.userImage) {
+    if (data.userImage) {
         state.capturedImage = new Image();
-        state.capturedImage.src = item.userImage;
+        state.capturedImage.src = data.userImage;
     }
+    
+    state.lastMemeUrl = data.memeUrl;
 
     elements.galleryModal.classList.add('hidden');
     
@@ -902,6 +1505,22 @@ function closeAbout() {
 }
 
 // ============================================
+// Privacy Modal
+// ============================================
+
+function openPrivacy() {
+    if (elements.privacyModal) {
+        elements.privacyModal.classList.remove('hidden');
+    }
+}
+
+function closePrivacy() {
+    if (elements.privacyModal) {
+        elements.privacyModal.classList.add('hidden');
+    }
+}
+
+// ============================================
 // Event Listeners
 // ============================================
 
@@ -920,25 +1539,52 @@ function setupEventListeners() {
     }
     
     // Capture button (for saving the result)
-    elements.captureBtn.addEventListener('click', capturePhoto);
+    if (elements.captureBtn) {
+        elements.captureBtn.addEventListener('click', async () => {
+            try {
+                elements.captureBtn.disabled = true;
+                elements.captureBtn.textContent = 'Preparing...';
+                await capturePhoto();
+            } catch (e) {
+                console.error('Capture error:', e);
+                showToast('Failed to prepare image for saving', 'error');
+            } finally {
+                elements.captureBtn.disabled = false;
+                elements.captureBtn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                    Save Result
+                `;
+            }
+        });
+    }
     
     // Modal buttons
-    elements.downloadBtn.addEventListener('click', downloadPhoto);
-    elements.shareBtn.addEventListener('click', sharePhoto);
+    if (elements.downloadBtn) elements.downloadBtn.addEventListener('click', downloadPhoto);
+    if (elements.shareBtn) elements.shareBtn.addEventListener('click', sharePhoto);
     if (elements.copyBtn) elements.copyBtn.addEventListener('click', copyPhoto);
-    elements.closeModalBtn.addEventListener('click', closeModal);
+    if (elements.closeModalBtn) elements.closeModalBtn.addEventListener('click', closeModal);
     
     // Close modal on backdrop click
-    elements.captureModal.addEventListener('click', (e) => {
-        if (e.target === elements.captureModal) closeModal();
-    });
-    // Close gallery on backdrop click
+    if (elements.captureModal) {
+        elements.captureModal.addEventListener('click', (e) => {
+            if (e.target === elements.captureModal) closeModal();
+        });
+    }
+    
+    // Gallery modal events
     if (elements.galleryModal) {
         elements.galleryModal.addEventListener('click', (e) => {
             if (e.target === elements.galleryModal) closeGallery();
         });
     }
-    // Close about modal on backdrop click
+    if (elements.closeGalleryBtn) {
+        elements.closeGalleryBtn.addEventListener('click', closeGallery);
+    }
+    if (elements.clearAllBtn) {
+        elements.clearAllBtn.addEventListener('click', clearAllHistory);
+    }
+    
+    // About modal events
     if (elements.aboutModal) {
         elements.aboutModal.addEventListener('click', (e) => {
             if (e.target === elements.aboutModal) closeAbout();
@@ -953,6 +1599,22 @@ function setupEventListeners() {
     if (elements.closeAboutBtn) {
         elements.closeAboutBtn.addEventListener('click', closeAbout);
     }
+    
+    // Privacy modal events
+    if (elements.privacyModal) {
+        elements.privacyModal.addEventListener('click', (e) => {
+            if (e.target === elements.privacyModal) closePrivacy();
+        });
+    }
+    if (elements.privacyLink) {
+        elements.privacyLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            openPrivacy();
+        });
+    }
+    if (elements.closePrivacyBtn) {
+        elements.closePrivacyBtn.addEventListener('click', closePrivacy);
+    }
 
     // Navigation
     if (elements.galleryLink) {
@@ -966,24 +1628,33 @@ function setupEventListeners() {
             e.preventDefault();
             closeGallery();
             closeAbout();
+            closePrivacy();
         });
-    }
-    if (elements.closeGalleryBtn) {
-        elements.closeGalleryBtn.addEventListener('click', closeGallery);
-    }
-    if (elements.closeAboutBtn) {
-        elements.closeAboutBtn.addEventListener('click', closeAbout);
     }
     
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
-        if (e.code === 'Space') { 
+        // Don't trigger shortcuts when consent banner is visible
+        if (!state.hasConsent && !checkConsent()) return;
+        
+        if (e.code === 'Space' && !e.target.matches('input, textarea, button')) { 
             e.preventDefault(); 
             snapPhoto(); // SNAP on spacebar
         }
-        if (e.code === 'Escape') closeModal();
-        if (e.code === 'KeyS' && state.lastCaption) {
-            capturePhoto(); // Save with 'S' key
+        if (e.code === 'Escape') {
+            closeModal();
+            closeGallery();
+            closeAbout();
+            closePrivacy();
+        }
+        if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            if (state.lastCaption) {
+                capturePhoto().catch(err => {
+                    console.error('Capture failed:', err);
+                    showToast('Failed to prepare image', 'error');
+                });
+            }
         }
     });
 }

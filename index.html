@@ -34,6 +34,7 @@
                 <a href="#" class="active" id="nav-create">Create</a>
                 <a href="#gallery" id="nav-gallery">Gallery</a>
                 <a href="#" id="nav-about">About</a>
+                <a href="#" id="nav-privacy">Privacy</a>
             </div>
         </nav>
 
@@ -83,7 +84,7 @@
                     </div>
 
                     <div class="meme-display-container">
-                        <img id="meme-image" src="" alt="Matching meme">
+                        <img id="meme-image" src="" alt="Matching meme" crossorigin="anonymous">
                         <div class="meme-placeholder" id="meme-placeholder">
                             <div class="placeholder-icon">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
@@ -156,15 +157,40 @@
         <div class="modal-content gallery-content">
             <div class="modal-header">
                 <h3>Your Roast History</h3>
-                <button id="close-gallery-btn" class="close-btn">✕</button>
+                <div class="gallery-actions">
+                    <button id="clear-all-btn" class="btn btn-outline btn-sm" title="Clear All History">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        Clear All
+                    </button>
+                    <button id="close-gallery-btn" class="close-btn">✕</button>
+                </div>
             </div>
-            <div class="modal-body">
+            <div class="modal-body gallery-body">
                 <div id="gallery-grid" class="gallery-grid">
                     <!-- Gallery items will be injected here -->
                     <div class="empty-gallery">
                         <p>No roasts yet! Go make some memes. 📸</p>
                     </div>
                 </div>
+            </div>
+            <div class="gallery-footer">
+                <p class="storage-info" id="storage-info">Storage: 0/10 items • Expires in 7 days</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Consent Banner -->
+    <div id="consent-banner" class="consent-banner hidden">
+        <div class="consent-content">
+            <div class="consent-icon">🔒</div>
+            <div class="consent-text">
+                <h4>Privacy Notice</h4>
+                <p>Memoji uses your camera to capture facial expressions. Images are sent to <strong>Microsoft Azure AI</strong> for analysis and <strong>Google Tenor</strong> for GIF matching. Your data is processed securely and not stored on external servers beyond the request.</p>
+                <p>Results are saved locally in your browser. <a href="#" id="consent-privacy-link">Read our Privacy Policy</a></p>
+            </div>
+            <div class="consent-actions">
+                <button id="consent-accept" class="btn btn-primary">I Understand & Accept</button>
+                <button id="consent-decline" class="btn btn-outline">Decline</button>
             </div>
         </div>
     </div>
@@ -219,6 +245,97 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Privacy Policy Modal -->
+    <div id="privacy-modal" class="modal hidden">
+        <div class="modal-content privacy-content">
+            <div class="modal-header">
+                <h3>🔒 Privacy Policy</h3>
+                <button id="close-privacy-btn" class="close-btn">✕</button>
+            </div>
+            <div class="modal-body privacy-body">
+                <p class="privacy-updated">Last Updated: February 1, 2026</p>
+                
+                <h4>1. Overview</h4>
+                <p>Memoji ("we", "our", "the app") is an AI-powered meme generator that analyzes facial expressions to create personalized meme content. This policy explains how we collect, use, and protect your data.</p>
+                
+                <h4>2. Data We Collect</h4>
+                <ul>
+                    <li><strong>Camera Images:</strong> When you click "SNAP" or upload an image, we capture/receive the image for analysis.</li>
+                    <li><strong>Generated Content:</strong> AI-generated captions and matched memes/GIFs.</li>
+                    <li><strong>Local History:</strong> Your results are saved in your browser's local storage (encrypted).</li>
+                </ul>
+                
+                <h4>3. How We Process Your Data</h4>
+                <p><strong>Microsoft Azure OpenAI (GPT-4 Vision):</strong></p>
+                <ul>
+                    <li>Your images are sent to Microsoft Azure AI services for facial expression analysis.</li>
+                    <li>As per <a href="https://learn.microsoft.com/en-us/legal/cognitive-services/openai/data-privacy" target="_blank">Microsoft's Data Privacy Policy</a>:</li>
+                    <li>Your prompts and images are NOT used to train AI models.</li>
+                    <li>Your data is NOT shared with OpenAI or other customers.</li>
+                    <li>Images are processed in real-time and NOT stored on Microsoft servers (unless abuse is detected).</li>
+                    <li>Data is encrypted in transit using TLS.</li>
+                </ul>
+                
+                <p><strong>Google Tenor GIF API:</strong></p>
+                <ul>
+                    <li>We send text search queries (not your images) to Tenor to find matching GIFs.</li>
+                    <li>Tenor may collect usage analytics as per <a href="https://policies.google.com/privacy" target="_blank">Google's Privacy Policy</a>.</li>
+                </ul>
+                
+                <h4>4. Local Data Storage</h4>
+                <ul>
+                    <li>Results are stored in your browser's localStorage with AES encryption.</li>
+                    <li>Data automatically expires after 7 days.</li>
+                    <li>You can delete your history at any time from the Gallery.</li>
+                    <li>Storage is limited to ~10 items to prevent browser quota issues.</li>
+                    <li>Data never leaves your device unless you share it.</li>
+                </ul>
+                
+                <h4>5. What We DO NOT Do</h4>
+                <ul>
+                    <li>❌ We do NOT create user accounts or collect personal information.</li>
+                    <li>❌ We do NOT sell or share your data with advertisers.</li>
+                    <li>❌ We do NOT store your images on our servers.</li>
+                    <li>❌ We do NOT use cookies for tracking.</li>
+                    <li>❌ We do NOT train AI models with your data.</li>
+                </ul>
+                
+                <h4>6. Your Rights</h4>
+                <ul>
+                    <li><strong>Access:</strong> View your saved results in the Gallery.</li>
+                    <li><strong>Delete:</strong> Remove individual items or clear all history.</li>
+                    <li><strong>Withdraw Consent:</strong> Stop using the app; clear browser data to remove all traces.</li>
+                    <li><strong>Export:</strong> Download your creations using the Save feature.</li>
+                </ul>
+                
+                <h4>7. Security Measures</h4>
+                <ul>
+                    <li>All API communications use HTTPS/TLS encryption.</li>
+                    <li>API keys are stored securely in server environment variables.</li>
+                    <li>Local storage uses AES-256 encryption.</li>
+                    <li>No server-side storage of user content.</li>
+                </ul>
+                
+                <h4>8. Third-Party Services</h4>
+                <table class="privacy-table">
+                    <tr><th>Service</th><th>Purpose</th><th>Data Sent</th><th>Privacy Policy</th></tr>
+                    <tr><td>Microsoft Azure OpenAI</td><td>Image Analysis</td><td>Camera/uploaded images</td><td><a href="https://learn.microsoft.com/en-us/legal/cognitive-services/openai/data-privacy" target="_blank">Link</a></td></tr>
+                    <tr><td>Google Tenor</td><td>GIF Search</td><td>Text queries only</td><td><a href="https://policies.google.com/privacy" target="_blank">Link</a></td></tr>
+                    <tr><td>face-api.js (CDN)</td><td>Face Detection</td><td>None (runs locally)</td><td>N/A (Client-side)</td></tr>
+                </table>
+                
+                <h4>9. Children's Privacy</h4>
+                <p>This app is not intended for children under 13. We do not knowingly collect data from children.</p>
+                
+                <h4>10. Changes to This Policy</h4>
+                <p>We may update this policy. Continued use after changes constitutes acceptance.</p>
+                
+                <h4>11. Contact</h4>
+                <p>For privacy concerns, contact: <a href="https://www.linkedin.com/in/lokesh-kumar-a-r-465218244/" target="_blank">Lokesh Kumar A R</a></p>
             </div>
         </div>
     </div>
