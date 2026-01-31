@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Memoji | AI Meme Generator</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='10' rx='2'/%3E%3Ccircle cx='12' cy='5' r='2'/%3E%3Cpath d='M12 7v4'/%3E%3Cline x1='8' y1='16' x2='8' y2='16'/%3E%3Cline x1='16' y1='16' x2='16' y2='16'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,12 +14,15 @@
     <!-- Loading Screen -->
     <div id="loading-screen">
         <div class="loader-content">
-            <div class="logo-text">Memoji</div>
-            <p>Readying your roast...</p>
-            <div class="progress-bar">
-                <div class="progress-fill" id="progress-fill"></div>
+            <div class="logo-3d-container">
+                <div class="logo-3d-wrapper">
+                    <svg class="loader-logo" xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>
+                    <div class="orbital-ring orbital-ring-1"></div>
+                    <div class="orbital-ring orbital-ring-2"></div>
+                </div>
             </div>
-            <p id="loading-status">Initializing...</p>
+            <div class="logo-text">Memoji</div>
+            <p class="loader-tagline">AI-powered roasting</p>
         </div>
     </div>
 
@@ -30,11 +34,20 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.5rem;"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>
                 Memoji
             </div>
-            <div class="nav-links">
+            <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation menu" aria-expanded="false">
+                <span class="nav-toggle-bar"></span>
+                <span class="nav-toggle-bar"></span>
+                <span class="nav-toggle-bar"></span>
+            </button>
+            <div class="nav-links" id="nav-links">
                 <a href="#" class="active" id="nav-create">Create</a>
                 <a href="#gallery" id="nav-gallery">Gallery</a>
                 <a href="#" id="nav-about">About</a>
                 <a href="#" id="nav-privacy">Privacy</a>
+                <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme" title="Toggle dark/light mode">
+                    <svg class="theme-icon-dark" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    <svg class="theme-icon-light" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                </button>
             </div>
         </nav>
 
@@ -80,7 +93,12 @@
                             </span>
                             <span class="bot-name">Memoji AI</span>
                         </div>
-                        <p id="caption-text" class="typewriter">Waiting for your face...</p>
+                        <p id="caption-text">Waiting for your face...</p>
+                        <!-- Caption Skeleton -->
+                        <div class="caption-skeleton hidden" id="caption-skeleton">
+                            <div class="skeleton skeleton-text"></div>
+                            <div class="skeleton skeleton-text short"></div>
+                        </div>
                     </div>
 
                     <div class="meme-display-container">
@@ -91,9 +109,23 @@
                             </div>
                             <p>Make a face to see your meme</p>
                         </div>
+                        <!-- Skeleton Loading State -->
+                        <div class="skeleton-container hidden" id="skeleton-loader">
+                            <div class="skeleton skeleton-image"></div>
+                        </div>
+                        <!-- Error State -->
+                        <div class="meme-error-state hidden" id="meme-error">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            <p class="meme-error-title">Failed to load meme</p>
+                            <p class="meme-error-desc">Check your connection and try again</p>
+                            <button class="btn btn-secondary btn-sm" id="retry-meme-btn">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                                Retry
+                            </button>
+                        </div>
                         <div id="ai-loader" class="ai-loader hidden">
                             <div class="spinner"></div>
-                            <p class="loader-text">Cooking up a roast...</p>
+                            <p class="loader-text">Analyzing expression...</p>
                         </div>
                     </div>
                 </div>
@@ -102,26 +134,34 @@
             <!-- Action Bar -->
             <div class="action-bar">
                 <div class="action-group">
-                    <button id="snap-btn" class="btn btn-primary btn-lg pulse-hover">
+                    <button id="snap-btn" class="btn btn-primary btn-lg pulse-hover" title="Take a photo for analysis (Spacebar)">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                         SNAP!
                     </button>
-                    <button id="upload-btn" class="btn btn-secondary">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                        Upload
-                    </button>
+                    <div class="upload-wrapper">
+                        <button id="upload-btn" class="btn btn-secondary" title="Upload an image from your device">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            Upload
+                        </button>
+                        <div class="upload-preview hidden" id="upload-preview">
+                            <img id="upload-preview-img" src="" alt="Upload preview">
+                            <button class="upload-preview-clear" id="clear-upload" title="Clear selected image">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            </button>
+                        </div>
+                    </div>
                     <input type="file" id="upload-input" accept="image/*" style="display: none;">
                 </div>
                 
                 <div class="action-group">
-                    <button id="capture-btn" class="btn btn-outline">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                        Save Result
+                    <button id="capture-btn" class="btn btn-outline" title="Share or download your creation (Ctrl+S)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                        Share
                     </button>
                 </div>
             </div>
             
-            <p class="instruction-text">Tap <strong>spacebar</strong> to snap instantly</p>
+            <p class="instruction-text">Press <kbd>Space</kbd> to snap &middot; <kbd>Ctrl+S</kbd> to save &middot; <kbd>Esc</kbd> to close modals</p>
         </main>
     </div>
 
@@ -130,7 +170,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Share Your Laughter</h3>
-                <button id="close-modal-btn" class="close-btn">✕</button>
+                <button id="close-modal-btn" class="close-btn" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
             </div>
             <div class="modal-body">
                 <canvas id="capture-canvas"></canvas>
@@ -162,14 +202,14 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                         Clear All
                     </button>
-                    <button id="close-gallery-btn" class="close-btn">✕</button>
+                    <button id="close-gallery-btn" class="close-btn" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
                 </div>
             </div>
             <div class="modal-body gallery-body">
                 <div id="gallery-grid" class="gallery-grid">
                     <!-- Gallery items will be injected here -->
                     <div class="empty-gallery">
-                        <p>No roasts yet! Go make some memes. 📸</p>
+                        <p>No roasts yet. Hit SNAP to get started.</p>
                     </div>
                 </div>
             </div>
@@ -182,7 +222,9 @@
     <!-- Consent Banner -->
     <div id="consent-banner" class="consent-banner hidden">
         <div class="consent-content">
-            <div class="consent-icon">🔒</div>
+            <div class="consent-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
             <div class="consent-text">
                 <h4>Privacy Notice</h4>
                 <p>Memoji uses your camera to capture facial expressions. Images are sent to <strong>Microsoft Azure AI</strong> for analysis and <strong>Google Tenor</strong> for GIF matching. Your data is processed securely and not stored on external servers beyond the request.</p>
@@ -198,7 +240,7 @@
     <!-- About Section (Full Page) -->
     <div id="about-modal" class="modal hidden">
         <div class="modal-content about-content">
-            <button id="close-about-btn" class="close-btn-floating">✕</button>
+            <button id="close-about-btn" class="close-btn-floating" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
             
             <div class="about-body">
                 <!-- Left Side: Large Photo -->
@@ -253,8 +295,10 @@
     <div id="privacy-modal" class="modal hidden">
         <div class="modal-content privacy-content">
             <div class="modal-header">
-                <h3>🔒 Privacy Policy</h3>
-                <button id="close-privacy-btn" class="close-btn">✕</button>
+                <h3>Privacy Policy</h3>
+                <button id="close-privacy-btn" class="close-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
             </div>
             <div class="modal-body privacy-body">
                 <p class="privacy-updated">Last Updated: February 1, 2026</p>
@@ -338,6 +382,17 @@
                 <p>For privacy concerns, contact: <a href="https://www.linkedin.com/in/lokesh-kumar-a-r-465218244/" target="_blank">Lokesh Kumar A R</a></p>
             </div>
         </div>
+    </div>
+
+    <!-- Gallery Lightbox Modal -->
+    <div id="lightbox-modal" class="lightbox hidden">
+        <button class="lightbox-close" id="lightbox-close" aria-label="Close lightbox">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <div class="lightbox-content">
+            <img id="lightbox-image" src="" alt="Full size image">
+        </div>
+        <p class="lightbox-caption" id="lightbox-caption"></p>
     </div>
     
     <script src="config.js"></script>

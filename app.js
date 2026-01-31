@@ -69,8 +69,56 @@ const state = {
     faceDetectionInterval: null,
     analysisCount: 0,
     capturedImage: null,
-    hasConsent: localStorage.getItem('memoji_consent') === 'accepted'
+    hasConsent: localStorage.getItem('memoji_consent') === 'accepted',
+    isOnline: navigator.onLine // Track network status
 };
+
+// ============================================
+// 🧹 Cleanup & Lifecycle Management
+// ============================================
+
+function cleanup() {
+    // Clear face detection interval to prevent memory leaks
+    if (state.faceDetectionInterval) {
+        clearInterval(state.faceDetectionInterval);
+        state.faceDetectionInterval = null;
+    }
+    
+    // Stop camera stream to release hardware
+    const video = document.getElementById('video');
+    if (video && video.srcObject) {
+        video.srcObject.getTracks().forEach(track => track.stop());
+        video.srcObject = null;
+    }
+    
+    console.log('🧹 Cleanup complete');
+}
+
+function stopFaceDetection() {
+    if (state.faceDetectionInterval) {
+        clearInterval(state.faceDetectionInterval);
+        state.faceDetectionInterval = null;
+        console.log('👁️ Face detection stopped');
+    }
+}
+
+// Network status handlers
+function handleOnline() {
+    state.isOnline = true;
+    console.log('🌐 Back online');
+    showToast('You\'re back online!', 'success');
+}
+
+function handleOffline() {
+    state.isOnline = false;
+    console.log('📵 Offline');
+    showToast('You\'re offline. Some features may not work.', 'warning');
+}
+
+// Register cleanup on page unload (prevents memory leak)
+window.addEventListener('beforeunload', cleanup);
+window.addEventListener('online', handleOnline);
+window.addEventListener('offline', handleOffline);
 
 // DOM Elements
 let elements = {};
@@ -122,10 +170,11 @@ function declineConsent() {
 // ============================================
 
 async function init() {
+    const loadStartTime = Date.now();
+    const MIN_LOADING_TIME = 800; // 2 seconds minimum
+    
     elements = {
         loadingScreen: document.getElementById('loading-screen'),
-        progressFill: document.getElementById('progress-fill'),
-        loadingStatus: document.getElementById('loading-status'),
         app: document.getElementById('app'),
         video: document.getElementById('video'),
         overlayCanvas: document.getElementById('overlay-canvas'),
@@ -167,7 +216,27 @@ async function init() {
         consentBanner: document.getElementById('consent-banner'),
         consentAccept: document.getElementById('consent-accept'),
         consentDecline: document.getElementById('consent-decline'),
-        consentPrivacyLink: document.getElementById('consent-privacy-link')
+        consentPrivacyLink: document.getElementById('consent-privacy-link'),
+        // Mobile Navigation
+        navToggle: document.getElementById('nav-toggle'),
+        navLinks: document.getElementById('nav-links'),
+        // Skeleton Loading
+        skeletonLoader: document.getElementById('skeleton-loader'),
+        captionSkeleton: document.getElementById('caption-skeleton'),
+        // Error State
+        memeError: document.getElementById('meme-error'),
+        retryMemeBtn: document.getElementById('retry-meme-btn'),
+        // Upload Preview
+        uploadPreview: document.getElementById('upload-preview'),
+        uploadPreviewImg: document.getElementById('upload-preview-img'),
+        clearUploadBtn: document.getElementById('clear-upload'),
+        // Lightbox
+        lightboxModal: document.getElementById('lightbox-modal'),
+        lightboxImage: document.getElementById('lightbox-image'),
+        lightboxCaption: document.getElementById('lightbox-caption'),
+        lightboxClose: document.getElementById('lightbox-close'),
+        // Theme Toggle
+        themeToggle: document.getElementById('theme-toggle')
     };
 
     const CONFIG = getConfig();
@@ -182,11 +251,10 @@ async function init() {
         await loadModels();
         updateLoadingStatus('Awaiting consent...', 100);
         
+        hideLoadingScreen(loadStartTime, MIN_LOADING_TIME);
         setTimeout(() => {
-            elements.loadingScreen.classList.add('hidden');
-            elements.app.classList.remove('hidden');
             showConsentBanner();
-        }, 500);
+        }, Math.max(0, MIN_LOADING_TIME - (Date.now() - loadStartTime)) + 700);
         
         setupEventListeners();
         return;
@@ -208,20 +276,19 @@ async function init() {
         try {
             await startCamera();
             cameraStarted = true;
-            updateLoadingStatus('Ready! Click SNAP! 📸', 100);
+            updateLoadingStatus('Ready! Click SNAP!', 100);
         } catch (camError) {
             console.warn('Camera failed to start:', camError);
             updateLoadingStatus('Camera unavailable - check permissions', 100);
             // handleCameraError is already called inside startCamera
         }
         
+        hideLoadingScreen(loadStartTime, MIN_LOADING_TIME);
         setTimeout(() => {
-            elements.loadingScreen.classList.add('hidden');
-            elements.app.classList.remove('hidden');
             if (cameraStarted) {
                 startApp();
             }
-        }, 500);
+        }, Math.max(0, MIN_LOADING_TIME - (Date.now() - loadStartTime)) + 700);
         
         setupEventListeners();
         cleanupExpiredHistory();
@@ -231,11 +298,10 @@ async function init() {
         updateLoadingStatus(`Error: ${error.message}`, 0);
         
         // Still show the app so user can see error message
+        hideLoadingScreen(loadStartTime, MIN_LOADING_TIME);
         setTimeout(() => {
-            elements.loadingScreen.classList.add('hidden');
-            elements.app.classList.remove('hidden');
             showError('⚠️ Initialization Error', `<p>${error.message}</p><p>Please refresh the page to try again.</p>`, true);
-        }, 1000);
+        }, Math.max(0, MIN_LOADING_TIME - (Date.now() - loadStartTime)) + 700);
     }
 }
 
@@ -273,8 +339,21 @@ function setupConsentListeners() {
 }
 
 function updateLoadingStatus(message, progress) {
-    elements.loadingStatus.textContent = message;
-    elements.progressFill.style.width = `${progress}%`;
+    // Loading animation is now purely visual - no status updates needed
+    console.log(`Loading: ${message} (${progress}%)`);
+}
+
+function hideLoadingScreen(loadStartTime, minTime = 3000) {
+    const elapsed = Date.now() - loadStartTime;
+    const remaining = Math.max(0, minTime - elapsed);
+    
+    setTimeout(() => {
+        elements.loadingScreen.classList.add('fade-out');
+        setTimeout(() => {
+            elements.loadingScreen.classList.add('hidden');
+            elements.app.classList.remove('hidden');
+        }, 600); // Match CSS transition duration
+    }, remaining);
 }
 
 function startApp() {
@@ -480,8 +559,35 @@ function showToast(message, type = 'info') {
     }, 4000);
 }
 
+// Skeleton loading states
+function showLoadingState() {
+    if (elements.captionText) elements.captionText.classList.add('hidden');
+    if (elements.captionSkeleton) elements.captionSkeleton.classList.remove('hidden');
+    if (elements.skeletonLoader) elements.skeletonLoader.classList.remove('hidden');
+    if (elements.memePlaceholder) elements.memePlaceholder.classList.add('hidden');
+    if (elements.memeImage) elements.memeImage.classList.remove('visible');
+    if (elements.aiCaption) elements.aiCaption.classList.add('loading');
+}
+
+function hideLoadingState() {
+    if (elements.captionText) elements.captionText.classList.remove('hidden');
+    if (elements.captionSkeleton) elements.captionSkeleton.classList.add('hidden');
+    if (elements.skeletonLoader) elements.skeletonLoader.classList.add('hidden');
+    if (elements.aiLoader) elements.aiLoader.classList.add('hidden');
+    if (elements.aiCaption) elements.aiCaption.classList.remove('loading');
+    if (elements.memeError) elements.memeError.classList.add('hidden');
+}
+
+function showMemeError() {
+    if (elements.memeError) elements.memeError.classList.remove('hidden');
+    if (elements.memePlaceholder) elements.memePlaceholder.classList.add('hidden');
+    if (elements.memeImage) elements.memeImage.classList.remove('visible');
+    if (elements.skeletonLoader) elements.skeletonLoader.classList.add('hidden');
+    if (elements.aiLoader) elements.aiLoader.classList.add('hidden');
+}
+
 // ============================================
-// 😀 Face Detection Loop (for sidebar emoji)
+// Face Detection Loop (for sidebar emoji)
 // ============================================
 
 function startFaceDetection() {
@@ -541,6 +647,13 @@ async function snapPhoto() {
         return;
     }
     
+    // Check if online (API requires internet)
+    if (!state.isOnline) {
+        showToast('No internet connection. Cannot analyze photo.', 'error');
+        showError('Offline', 'Memoji needs internet to analyze your photo. Please check your connection.');
+        return;
+    }
+    
     console.log('\n📸 ====== SNAP! Photo Mode Triggered ======');
     
     // Visual feedback - disable button
@@ -556,6 +669,9 @@ async function snapPhoto() {
         elements.video.style.filter = 'brightness(1)';
     }, 100);
     
+    // Show loading skeleton
+    showLoadingState();
+    
     // Run VLM analysis
     if (CONFIG.ENABLE_VLM) {
         await analyzeWithVLM();
@@ -564,9 +680,12 @@ async function snapPhoto() {
         await searchTenor(`${state.currentEmotion} Tamil`, state.analysisCount);
     }
     
+    // Hide loading state
+    hideLoadingState();
+    
     // Reset button
     if (elements.snapBtn) {
-        elements.snapBtn.textContent = '📸 SNAP!';
+        elements.snapBtn.textContent = 'SNAP!';
         elements.snapBtn.disabled = false;
         elements.snapBtn.classList.add('pulse');
     }
@@ -576,6 +695,10 @@ async function snapPhoto() {
 // 📁 Handle Image Upload
 // ============================================
 
+// Maximum upload size: 10MB (large images can crash the browser)
+const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+const MAX_UPLOAD_SIZE_MB = 10;
+
 async function handleImageUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -584,11 +707,42 @@ async function handleImageUpload(event) {
     console.log(`   📄 File: ${file.name}`);
     console.log(`   📦 Size: ${Math.round(file.size / 1024)}KB`);
     
+    // Validate file size to prevent browser crashes
+    if (file.size > MAX_UPLOAD_SIZE) {
+        showToast(`Image too large! Max ${MAX_UPLOAD_SIZE_MB}MB allowed. Your file: ${Math.round(file.size / (1024 * 1024))}MB`, 'error');
+        showError(`Image too large`, `Please upload an image smaller than ${MAX_UPLOAD_SIZE_MB}MB. Large images can crash your browser.`);
+        elements.uploadInput.value = ''; // Reset file input
+        return;
+    }
+    
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+        showToast('Please select an image file', 'error');
+        elements.uploadInput.value = '';
+        return;
+    }
+    
+    // Check if online (API requires internet)
+    if (!state.isOnline) {
+        showToast('No internet connection. Cannot analyze image.', 'error');
+        elements.uploadInput.value = '';
+        return;
+    }
+    
     // Visual feedback
     if (elements.uploadBtn) {
-        elements.uploadBtn.textContent = '⏳ Analyzing...';
+        elements.uploadBtn.textContent = 'Analyzing...';
         elements.uploadBtn.disabled = true;
     }
+    
+    // Show upload preview thumbnail
+    if (elements.uploadPreview && elements.uploadPreviewImg) {
+        elements.uploadPreviewImg.src = URL.createObjectURL(file);
+        elements.uploadPreview.classList.remove('hidden');
+    }
+    
+    // Show loading skeleton
+    showLoadingState();
     
     try {
         // Read file as base64
@@ -610,12 +764,19 @@ async function handleImageUpload(event) {
         await analyzeUploadedImage(base64Image);
         
     } catch (error) {
-        console.error('❌ Upload error:', error);
+        console.error('Upload error:', error);
+        showToast('Failed to process image', 'error');
     }
+    
+    // Hide loading state
+    hideLoadingState();
     
     // Reset button and input
     if (elements.uploadBtn) {
-        elements.uploadBtn.textContent = '📁 Upload Image';
+        elements.uploadBtn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Upload
+        `;
         elements.uploadBtn.disabled = false;
     }
     elements.uploadInput.value = ''; // Reset file input
@@ -626,30 +787,17 @@ async function analyzeUploadedImage(base64Image) {
     const analysisId = state.analysisCount;
     const CONFIG = getConfig();
     
-    console.log(`\n📸 ====== ANALYSIS #${analysisId} (UPLOADED) ======`);
-    console.log(`⏰ Time: ${new Date().toLocaleTimeString()}`);
-    
-    if (elements.aiCaption) {
-        elements.aiCaption.classList.add('loading');
-        elements.captionText.textContent = '"Analyzing uploaded image..."';
-        // Show loader in meme box
-        if (elements.aiLoader) {
-            elements.aiLoader.classList.remove('hidden');
-            elements.memePlaceholder.classList.add('hidden');
-            elements.memeImage.classList.remove('visible');
-        }
-    }
+    console.log(`\n[Analysis #${analysisId}] Processing uploaded image...`);
     
     try {
         if (CONFIG.ENABLE_VLM) {
-            console.log(`\n🤖 Sending to GPT-4o...`);
+            console.log(`   Sending to GPT-4o...`);
             const gptResponse = await callAzureOpenAI(base64Image, analysisId);
             
             if (gptResponse && gptResponse.search) {
-                console.log(`\n🎯 GPT Response:`);
-                console.log(`   � Expression: "${gptResponse.expression || 'N/A'}"`);
-                console.log(`   🔥 Roast: "${gptResponse.caption || 'N/A'}"`);
-                console.log(`   🔍 Search (by topic): "${gptResponse.search}"`);
+                console.log(`   Expression: "${gptResponse.expression || 'N/A'}"`);
+                console.log(`   Caption: "${gptResponse.caption || 'N/A'}"`);
+                console.log(`   Search: "${gptResponse.search}"`);
                 
                 if (gptResponse.caption) {
                     updateCaption(gptResponse.caption);
@@ -663,16 +811,11 @@ async function analyzeUploadedImage(base64Image) {
             await searchTenor('Tamil meme reaction', analysisId);
         }
     } catch (error) {
-        console.error(`❌ Analysis failed:`, error.message);
+        console.error(`Analysis failed:`, error.message);
         await searchTenor('Tamil comedy meme', analysisId);
     }
     
-    if (elements.aiCaption) {
-        elements.aiCaption.classList.remove('loading');
-        if (elements.aiLoader) elements.aiLoader.classList.add('hidden');
-    }
-    
-    console.log(`\n✅ ====== ANALYSIS #${analysisId} DONE ======\n`);
+    console.log(`[Analysis #${analysisId}] Complete`);
 }
 
 // ============================================
@@ -895,14 +1038,23 @@ async function searchTenor(query, analysisId) {
                 
                 // Set crossOrigin BEFORE setting src to enable CORS
                 elements.memeImage.crossOrigin = 'anonymous';
+                
+                // Wait for image to actually load before saving to history
+                // This prevents race condition where broken images get saved
+                elements.memeImage.onload = () => {
+                    console.log(`   GIF loaded successfully`);
+                    // Save automatically to history AFTER successful load
+                    saveToHistory(state.lastCaption, gifUrl);
+                };
+                
+                elements.memeImage.onerror = () => {
+                    console.error('   Failed to load GIF');
+                    showMemeError();
+                };
+                
                 elements.memeImage.src = gifUrl;
                 elements.memeImage.classList.add('visible');
                 elements.memePlaceholder.classList.add('hidden');
-                
-                // Save automatically to history when successful
-                saveToHistory(state.lastCaption, gifUrl);
-
-                console.log(`\n✅ [STEP 7] GIF displayed!`);
             }
         } else {
             console.log(`   ⚠️ No results, trying fallback...`);
@@ -924,12 +1076,18 @@ function updateCaption(caption) {
     state.lastCaption = caption;
     
     if (elements.captionText) {
-        // Reset typewriter animation
-        elements.captionText.classList.remove('typewriter');
+        // Reset classes
+        elements.captionText.classList.remove('typewriter', 'done');
         void elements.captionText.offsetWidth; // Force reflow
         
         elements.captionText.textContent = `"${caption}"`;
         elements.captionText.classList.add('typewriter');
+        
+        // Stop cursor blinking after text "finishes typing" (simulated delay)
+        const typingDuration = Math.min(caption.length * 30, 2000); // Max 2s
+        setTimeout(() => {
+            elements.captionText.classList.add('done');
+        }, typingDuration);
         
         // Parent card animation
         elements.aiCaption.classList.remove('new-caption');
@@ -1300,9 +1458,36 @@ function saveHistory(history) {
     try {
         localStorage.setItem('memoji_history_v2', encrypted);
     } catch (e) {
-        console.warn('⚠️ Storage full, clearing older items');
-        history = history.slice(0, Math.floor(history.length / 2));
-        localStorage.setItem('memoji_history_v2', encryptData(history));
+        // localStorage quota exceeded (usually 5MB limit)
+        console.warn('⚠️ Storage quota exceeded, removing oldest items...');
+        
+        // Strategy 1: Remove user images from oldest items
+        let modified = history.map((item, idx) => {
+            if (idx > Math.floor(history.length / 2)) {
+                return { ...item, userImage: null }; // Remove image from older items
+            }
+            return item;
+        });
+        
+        try {
+            localStorage.setItem('memoji_history_v2', encryptData(modified));
+            console.log('   ✅ Saved after removing old images');
+            showToast('Storage full - removed some older photos', 'warning');
+            return;
+        } catch (e2) {
+            // Strategy 2: Keep only half the items
+            modified = history.slice(0, Math.floor(history.length / 2));
+            try {
+                localStorage.setItem('memoji_history_v2', encryptData(modified));
+                console.log('   ✅ Saved after removing old items');
+                showToast('Storage full - removed older roasts', 'warning');
+            } catch (e3) {
+                // Strategy 3: Clear everything except newest item
+                console.error('   ❌ Storage critically full');
+                localStorage.setItem('memoji_history_v2', encryptData([history[0]]));
+                showToast('Storage critically full - kept only latest roast', 'error');
+            }
+        }
     }
 }
 
@@ -1346,13 +1531,52 @@ function saveToHistory(caption, memeUrl) {
 }
 
 function compressImage(dataUrl) {
-    // For now, just return as-is (could add canvas compression later)
-    // This helps with very large images
-    if (dataUrl && dataUrl.length > 500000) {
-        // Skip storing very large images to save space
+    // Canvas-based image compression to reduce localStorage usage
+    // Base64 images are ~37% larger than binary, and photos can be 2-5MB each
+    // localStorage has a 5MB limit, so we need aggressive compression
+    
+    if (!dataUrl) return null;
+    
+    // If already small enough, return as-is
+    if (dataUrl.length < 100000) return dataUrl;
+    
+    try {
+        // Create an offscreen canvas for compression
+        const img = new Image();
+        img.src = dataUrl;
+        
+        // Can't do async compression here, so we'll use a synchronous approach
+        // For very large images, just skip storing them
+        if (dataUrl.length > 300000) {
+            console.log('   📦 Image too large for storage, compressing drastically...');
+            // Store a much smaller version using canvas
+            const canvas = document.createElement('canvas');
+            const maxDim = 200; // Thumbnail size
+            const scale = Math.min(maxDim / img.naturalWidth, maxDim / img.naturalHeight);
+            canvas.width = img.naturalWidth * scale || maxDim;
+            canvas.height = img.naturalHeight * scale || maxDim;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            return canvas.toDataURL('image/jpeg', 0.5);
+        }
+        
+        // Medium size - compress with medium quality
+        if (dataUrl.length > 150000) {
+            const canvas = document.createElement('canvas');
+            const maxDim = 400;
+            const scale = Math.min(maxDim / img.naturalWidth, maxDim / img.naturalHeight, 1);
+            canvas.width = img.naturalWidth * scale || maxDim;
+            canvas.height = img.naturalHeight * scale || maxDim;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            return canvas.toDataURL('image/jpeg', 0.6);
+        }
+        
+        return dataUrl;
+    } catch (e) {
+        console.warn('Compression failed, skipping image storage:', e);
         return null;
     }
-    return dataUrl;
 }
 
 function deleteHistoryItem(id) {
@@ -1401,7 +1625,7 @@ function loadGallery() {
     if (history.length === 0) {
         grid.innerHTML = `
             <div class="empty-gallery">
-                <p>No roasts yet! Go make some memes. 📸</p>
+                <p>No roasts yet! Hit SNAP to get started.</p>
             </div>`;
         return;
     }
@@ -1421,16 +1645,21 @@ function loadGallery() {
         }
         imagesHtml += `<img src="${item.memeUrl}" class="gallery-thumb meme-thumb" alt="Meme" loading="lazy">`;
         
+        const escapedItem = JSON.stringify(item).replace(/"/g, '&quot;');
+        
         div.innerHTML = `
             <div class="gallery-item-actions">
-                <button class="gallery-action-btn" onclick="event.stopPropagation(); retryHistoryItem(${item.id})" title="Retry">
+                <button class="gallery-action-btn" onclick="event.stopPropagation(); openLightbox('${item.memeUrl}', '${item.caption.replace(/'/g, "\\'")}')" title="View full size">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                </button>
+                <button class="gallery-action-btn" onclick="event.stopPropagation(); retryHistoryItem(${item.id})" title="Use this again">
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                 </button>
                 <button class="gallery-action-btn delete" onclick="event.stopPropagation(); deleteHistoryItem(${item.id})" title="Delete">
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                 </button>
             </div>
-            <div class="gallery-images-pair" onclick="showInMainView(${JSON.stringify(item).replace(/"/g, '&quot;')})">
+            <div class="gallery-images-pair" onclick="showInMainView(${escapedItem})">
                 ${imagesHtml}
             </div>
             <div class="gallery-caption">"${item.caption}"</div>
@@ -1492,6 +1721,50 @@ function closeGallery() {
     if (elements.createLink) elements.createLink.classList.add('active');
 }
 
+function closeMobileNav() {
+    if (elements.navLinks) elements.navLinks.classList.remove('open');
+    if (elements.navToggle) elements.navToggle.setAttribute('aria-expanded', 'false');
+}
+
+// ============================================
+// Lightbox (Gallery Zoom)
+// ============================================
+
+function openLightbox(imageUrl, caption) {
+    if (!elements.lightboxModal) return;
+    elements.lightboxImage.src = imageUrl;
+    elements.lightboxCaption.textContent = caption ? `"${caption}"` : '';
+    elements.lightboxModal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeLightbox() {
+    if (!elements.lightboxModal) return;
+    elements.lightboxModal.classList.add('hidden');
+    document.body.style.overflow = '';
+}
+
+// ============================================
+// Theme Toggle
+// ============================================
+
+function initTheme() {
+    const savedTheme = localStorage.getItem('memoji_theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const theme = savedTheme || (prefersDark ? 'dark' : 'dark'); // Default to dark
+    document.documentElement.setAttribute('data-theme', theme);
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('memoji_theme', next);
+}
+
+// Initialize theme immediately
+initTheme();
+
 // ============================================
 // About Modal
 // ============================================
@@ -1537,8 +1810,19 @@ function setupEventListeners() {
     if (elements.uploadInput) {
         elements.uploadInput.addEventListener('change', handleImageUpload);
     }
+    if (elements.clearUploadBtn) {
+        elements.clearUploadBtn.addEventListener('click', () => {
+            elements.uploadInput.value = '';
+            elements.uploadPreview.classList.add('hidden');
+            if (elements.uploadPreviewImg.src) {
+                URL.revokeObjectURL(elements.uploadPreviewImg.src);
+                elements.uploadPreviewImg.src = '';
+            }
+            state.capturedImage = null;
+        });
+    }
     
-    // Capture button (for saving the result)
+    // Capture button (for sharing the result)
     if (elements.captureBtn) {
         elements.captureBtn.addEventListener('click', async () => {
             try {
@@ -1547,12 +1831,12 @@ function setupEventListeners() {
                 await capturePhoto();
             } catch (e) {
                 console.error('Capture error:', e);
-                showToast('Failed to prepare image for saving', 'error');
+                showToast('Failed to prepare image for sharing', 'error');
             } finally {
                 elements.captureBtn.disabled = false;
                 elements.captureBtn.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                    Save Result
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                    Share
                 `;
             }
         });
@@ -1563,6 +1847,19 @@ function setupEventListeners() {
     if (elements.shareBtn) elements.shareBtn.addEventListener('click', sharePhoto);
     if (elements.copyBtn) elements.copyBtn.addEventListener('click', copyPhoto);
     if (elements.closeModalBtn) elements.closeModalBtn.addEventListener('click', closeModal);
+    
+    // Retry meme button
+    if (elements.retryMemeBtn) {
+        elements.retryMemeBtn.addEventListener('click', () => {
+            if (state.lastMemeQuery) {
+                elements.memeError.classList.add('hidden');
+                showLoadingState();
+                searchTenor(state.lastMemeQuery, state.analysisCount).finally(hideLoadingState);
+            } else {
+                snapPhoto();
+            }
+        });
+    }
     
     // Close modal on backdrop click
     if (elements.captureModal) {
@@ -1582,6 +1879,16 @@ function setupEventListeners() {
     }
     if (elements.clearAllBtn) {
         elements.clearAllBtn.addEventListener('click', clearAllHistory);
+    }
+    
+    // Lightbox events
+    if (elements.lightboxClose) {
+        elements.lightboxClose.addEventListener('click', closeLightbox);
+    }
+    if (elements.lightboxModal) {
+        elements.lightboxModal.addEventListener('click', (e) => {
+            if (e.target === elements.lightboxModal) closeLightbox();
+        });
     }
     
     // About modal events
@@ -1629,7 +1936,26 @@ function setupEventListeners() {
             closeGallery();
             closeAbout();
             closePrivacy();
+            closeMobileNav();
         });
+    }
+    
+    // Mobile navigation toggle
+    if (elements.navToggle && elements.navLinks) {
+        elements.navToggle.addEventListener('click', () => {
+            const isOpen = elements.navLinks.classList.toggle('open');
+            elements.navToggle.setAttribute('aria-expanded', isOpen);
+        });
+        
+        // Close nav when clicking a link
+        elements.navLinks.querySelectorAll('a').forEach(link => {
+            link.addEventListener('click', closeMobileNav);
+        });
+    }
+    
+    // Theme toggle
+    if (elements.themeToggle) {
+        elements.themeToggle.addEventListener('click', toggleTheme);
     }
     
     // Keyboard shortcuts
@@ -1646,6 +1972,8 @@ function setupEventListeners() {
             closeGallery();
             closeAbout();
             closePrivacy();
+            closeLightbox();
+            closeMobileNav();
         }
         if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
