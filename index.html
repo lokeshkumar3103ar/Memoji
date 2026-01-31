@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memoji | AI Meme Generator</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+        <div class="loader-content">
+            <div class="logo-text">Memoji</div>
+            <p>Readying your roast...</p>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <p id="loading-status">Initializing...</p>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app" class="hidden">
+        <!-- Navigation -->
+        <nav class="navbar">
+            <div class="nav-brand">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.5rem;"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>
+                Memoji
+            </div>
+            <div class="nav-links">
+                <a href="#" class="active" id="nav-create">Create</a>
+                <a href="#gallery" id="nav-gallery">Gallery</a>
+                <a href="#" id="nav-about">About</a>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main>
+            <!-- Header Section -->
+            <div class="header-section">
+                <h1>Turn your face into a <span class="text-gradient">meme</span>.</h1>
+                <p class="subtitle">AI-powered roasting engine. Capture your mood, get roasted in Tanglish.</p>
+            </div>
+
+            <!-- Workspace -->
+            <div class="workspace">
+                <!-- Camera Feed -->
+                <div class="camera-panel">
+                    <div class="panel-header">
+                        <div class="dot red"></div>
+                        <div class="dot yellow"></div>
+                        <div class="dot green"></div>
+                        <span class="panel-title">Camera Feed</span>
+                    </div>
+                    <div class="video-wrapper">
+                        <video id="video" autoplay muted playsinline></video>
+                        <canvas id="overlay-canvas"></canvas>
+                        <div class="emotion-badge-container" id="emotion-badge">
+                            <span id="current-emoji">😐</span>
+                            <span id="current-emotion">Neutral</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Result Feed -->
+                <div class="result-panel" id="meme-panel">
+                    <div class="panel-header">
+                        <span class="panel-title">AI Output</span>
+                        <div class="live-indicator">LIVE</div>
+                    </div>
+                    
+                    <div class="ai-caption-card" id="ai-caption">
+                        <div class="caption-header">
+                            <span class="bot-avatar">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>
+                            </span>
+                            <span class="bot-name">Memoji AI</span>
+                        </div>
+                        <p id="caption-text" class="typewriter">Waiting for your face...</p>
+                    </div>
+
+                    <div class="meme-display-container">
+                        <img id="meme-image" src="" alt="Matching meme">
+                        <div class="meme-placeholder" id="meme-placeholder">
+                            <div class="placeholder-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                            </div>
+                            <p>Make a face to see your meme</p>
+                        </div>
+                        <div id="ai-loader" class="ai-loader hidden">
+                            <div class="spinner"></div>
+                            <p class="loader-text">Cooking up a roast...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Bar -->
+            <div class="action-bar">
+                <div class="action-group">
+                    <button id="snap-btn" class="btn btn-primary btn-lg pulse-hover">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                        SNAP!
+                    </button>
+                    <button id="upload-btn" class="btn btn-secondary">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        Upload
+                    </button>
+                    <input type="file" id="upload-input" accept="image/*" style="display: none;">
+                </div>
+                
+                <div class="action-group">
+                    <button id="capture-btn" class="btn btn-outline">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                        Save Result
+                    </button>
+                </div>
+            </div>
+            
+            <p class="instruction-text">Tap <strong>spacebar</strong> to snap instantly</p>
+        </main>
+    </div>
+
+    <!-- Captured Photo Modal -->
+    <div id="capture-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Share Your Laughter</h3>
+                <button id="close-modal-btn" class="close-btn">✕</button>
+            </div>
+            <div class="modal-body">
+                <canvas id="capture-canvas"></canvas>
+            </div>
+            <div class="modal-footer">
+                <button id="copy-btn" class="btn btn-outline" title="Copy to Clipboard">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    Copy
+                </button>
+                <button id="download-btn" class="btn btn-secondary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Save
+                </button>
+                <button id="share-btn" class="btn btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                    Share
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gallery Modal -->
+    <div id="gallery-modal" class="modal hidden">
+        <div class="modal-content gallery-content">
+            <div class="modal-header">
+                <h3>Your Roast History</h3>
+                <button id="close-gallery-btn" class="close-btn">✕</button>
+            </div>
+            <div class="modal-body">
+                <div id="gallery-grid" class="gallery-grid">
+                    <!-- Gallery items will be injected here -->
+                    <div class="empty-gallery">
+                        <p>No roasts yet! Go make some memes. 📸</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- About Section (Full Page) -->
+    <div id="about-modal" class="modal hidden">
+        <div class="modal-content about-content">
+            <button id="close-about-btn" class="close-btn-floating">✕</button>
+            
+            <div class="about-body">
+                <!-- Left Side: Large Photo -->
+                <div class="about-left">
+                    <img src="assets/lokesh.png" alt="Lokesh Kumar A R" class="large-profile-img">
+                </div>
+
+                <!-- Right Side: Content -->
+                <div class="about-right">
+                    <div class="about-section">
+                        <h2 class="deconstruct-text">Memoji</h2>
+                        <p class="about-desc">
+                            An advanced AI-driven system leveraging Vision Language Models (VLM) for real-time facial expression analysis.  
+                            Constructed to bridge the gap between human emotion and digital context through automated meme generation.
+                        </p>
+                    </div>
+
+                    <div class="profile-info-large">
+                        <div class="profile-header">
+                            <h3 class="profile-name-large">Lokesh Kumar A R</h3>
+                            <span class="pronouns-badge">He/Him</span>
+                        </div>
+                        
+                        <p class="profile-role">Lead AI/ML Engineer & Team Lead at Imitate Labs</p>
+                        <p class="profile-edu">Dual Degree Student at IIT Madras & Hindustan University</p>
+                        
+                        <p class="profile-bio-text">
+                            Building AI-Driven Systems with Vision Transformers, Neural Networks & Fine-tuned LLMs.
+                        </p>
+                        
+                        <div class="profile-links-large">
+                            <a href="https://www.linkedin.com/in/lokesh-kumar-a-r-465218244/" target="_blank" class="social-link-large">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>
+                                LinkedIn
+                            </a>
+                            <a href="https://github.com/lokeshkumar3103ar" target="_blank" class="social-link-large">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+                                GitHub
+                            </a>
+                            <a href="https://lokeshkumar3103ar.github.io/My_portfolio" target="_blank" class="social-link-large">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+                                Portfolio
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="config.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <script defer src="app.js"></script>
+</body>
+</html>
