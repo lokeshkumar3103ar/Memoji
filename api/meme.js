@@ -36,7 +36,7 @@ module.exports = async (req, res) => {
 
   const clientIp = getClientIp(req);
   if (isRateLimited(`meme:${clientIp}`)) {
-    return res.status(429).json({ error: 'Rate limit exceeded. Try again later.' });
+    return res.status(429).json({ error: 'Rate limit hit: max 5 uploads per hour per IP or device.' });
   }
 
   const rawQuery = typeof req.query?.q === 'string' ? req.query.q : '';

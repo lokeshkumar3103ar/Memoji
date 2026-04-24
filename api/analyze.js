@@ -121,7 +121,7 @@ module.exports = async (req, res) => {
   }
 
   if (applyRateLimit(req, res, 'analyze')) {
-    return res.status(429).json({ error: 'Rate limit exceeded. Max 5 uploads per minute per IP or device.' });
+    return res.status(429).json({ error: 'Rate limit hit: max 5 uploads per hour per IP or device.' });
   }
 
   const endpoint = process.env.AZURE_OPENAI_ENDPOINT;

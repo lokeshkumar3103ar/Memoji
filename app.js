@@ -1022,7 +1022,7 @@ async function callAzureOpenAI(base64Image, analysisId) {
         }
 
         if (response.status === 429) {
-            showToast('Rate limit hit: max 5 uploads/min per IP or device.', 'warning');
+            showToast('Rate limit hit: max 5 uploads per hour per IP or device.', 'warning');
         }
 
         const error = errorMessage;
