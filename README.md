@@ -40,6 +40,15 @@ vercel
 # Follow prompts, get live URL in 30 seconds!
 ```
 
+### Required Environment Variables (Vercel Project Settings)
+Set these in Vercel: Project -> Settings -> Environment Variables.
+
+- AZURE_OPENAI_ENDPOINT
+- AZURE_OPENAI_API_KEY
+- AZURE_OPENAI_DEPLOYMENT (optional, default gpt-4o)
+- AZURE_OPENAI_API_VERSION (optional, default 2025-01-01-preview)
+- TENOR_API_KEY (optional)
+
 ## 📱 Features
 
 - ✅ **Real-time face detection** using face-api.js
@@ -48,7 +57,7 @@ vercel
 - ✅ **Meme match mode**: Finds matching GIFs from Tenor
 - ✅ **Capture & Share**: Download or share photos directly
 - ✅ **Mobile-friendly**: Works on phones too!
-- ✅ **No backend needed**: Everything runs in browser
+- ✅ **Secure API architecture**: Secrets stay server-side via Vercel API routes
 
 ## 🎮 How to Use
 
@@ -61,13 +70,9 @@ vercel
 ## 🔧 Customization
 
 ### Change Tenor API Key (Optional)
-The app includes a demo API key. For production, get your own free key:
 1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
 2. Create a new API key
-3. Replace in `app.js`:
-```javascript
-TENOR_API_KEY: 'YOUR_NEW_KEY_HERE',
-```
+3. Set TENOR_API_KEY in Vercel Environment Variables
 
 ### Add Custom Meme Searches
 Edit `CONFIG.EMOTION_QUERIES` in `app.js`:

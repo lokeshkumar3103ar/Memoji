@@ -7,11 +7,36 @@
 const getConfig = () => window.APP_CONFIG || {};
 
 // ============================================
-// 🔐 Encryption Utilities (AES-like XOR for client-side)
+// 🔐 Storage Obfuscation Utilities (not cryptographic encryption)
 // ============================================
 const ENCRYPTION_KEY = 'memoji_secure_2026'; // Simple obfuscation key
 const STORAGE_EXPIRY_DAYS = 7;
 const MAX_HISTORY_ITEMS = 10;
+const DEVICE_ID_STORAGE_KEY = 'memoji_device_id';
+
+function generateDeviceId() {
+    if (window.crypto && window.crypto.getRandomValues) {
+        const bytes = new Uint8Array(16);
+        window.crypto.getRandomValues(bytes);
+        return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    }
+    return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function getOrCreateDeviceId() {
+    try {
+        const existing = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+        if (existing && /^[a-zA-Z0-9_-]{8,80}$/.test(existing)) {
+            return existing;
+        }
+
+        const created = generateDeviceId();
+        localStorage.setItem(DEVICE_ID_STORAGE_KEY, created);
+        return created;
+    } catch {
+        return 'device_unavailable';
+    }
+}
 
 function encryptData(data) {
     const jsonStr = JSON.stringify(data);
@@ -257,8 +282,6 @@ async function init() {
         themeToggle: document.getElementById('theme-toggle')
     };
 
-    const CONFIG = getConfig();
-    
     // Setup consent listeners first
     setupConsentListeners();
     
@@ -279,11 +302,6 @@ async function init() {
     }
     
     try {
-        if (!CONFIG.AZURE_OPENAI_ENDPOINT || CONFIG.AZURE_OPENAI_ENDPOINT === "YOUR_ENDPOINT_HERE") {
-            console.warn('⚠️ Azure OpenAI not configured!');
-            CONFIG.ENABLE_VLM = false;
-        }
-
         updateLoadingStatus('Loading face detection...', 10);
         await loadModels();
         
@@ -324,13 +342,7 @@ async function init() {
 }
 
 async function startAppAfterConsent() {
-    const CONFIG = getConfig();
-    
     try {
-        if (!CONFIG.AZURE_OPENAI_ENDPOINT || CONFIG.AZURE_OPENAI_ENDPOINT === "YOUR_ENDPOINT_HERE") {
-            CONFIG.ENABLE_VLM = false;
-        }
-        
         await startCamera();
         startApp();
         cleanupExpiredHistory();
@@ -481,10 +493,19 @@ function handleCameraError(error) {
         message = '<p>Your browser does not support camera access. Please try using Chrome, Firefox, Safari, or Edge.</p>';
         canRetry = false;
     } else {
-        message = `<p>Failed to access camera: ${error.message || 'Unknown error'}</p>`;
+        message = `<p>Failed to access camera: ${escapeHtml(error.message || 'Unknown error')}</p>`;
     }
     
     showError(title, message, canRetry);
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 async function trySimpleCamera() {
@@ -967,57 +988,19 @@ async function analyzeWithVLM() {
 }
 
 async function callAzureOpenAI(base64Image, analysisId) {
-    const CONFIG = getConfig();
-    
-    const endpoint = CONFIG.AZURE_OPENAI_ENDPOINT.replace(/\/$/, '');
-    const deployment = CONFIG.AZURE_OPENAI_DEPLOYMENT;
-    const apiVersion = CONFIG.AZURE_OPENAI_API_VERSION || '2024-08-01-preview';
-    
-    const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
-    
-    const prompt = `You are a Tamil meme expert. Look CAREFULLY at this person's face and body language.
-
-1. EXPRESSION: What do you see? Look for:
-   - Facial expression (smiling, sad, angry, shocked, thinking, bored, confused)
-   - Eye gestures (winking, one eye closed, rolling eyes, wide eyes, sleepy eyes)
-   - Hand gestures (thumbs up, peace sign, hand on chin, facepalm, pointing)
-   - Poses (leaning, slouching, arms crossed, shrugging)
-   - Mouth (tongue out, lips pursed, mouth open, smirking)
-   
-   Be SPECIFIC! Don't just say "bored" - describe exactly what you see.
-
-2. ROAST: Write a funny Tanglish caption (Tamil + English, max 12 words) that matches EXACTLY what they're doing. Be creative with college/daily life themes:
-   - Winking → flirting, crush, secret
-   - One eye closed → tired, sleepy, suspicious
-   - Thumbs up → sarcastic okay, fake happy
-   - Thinking pose → confused, overthinking
-   - Tongue out → teasing, playful, silly
-
-3. SEARCH: Based on your ROAST's theme, give a Tamil meme search query.
-   Search for the TOPIC, not the expression!
-
-RESPOND ONLY WITH JSON:
-{"expression": "detailed description of pose/gesture", "caption": "Tanglish roast matching the pose", "search": "roast topic Tamil"}`;
-
-    console.log(`   📤 Calling GPT-4o...`);
+    console.log('   📤 Calling secure /api/analyze...');
     const startTime = Date.now();
-    
-    const response = await fetch(url, {
+    const deviceId = getOrCreateDeviceId();
+
+    const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'api-key': CONFIG.AZURE_OPENAI_API_KEY
+            'X-Device-Id': deviceId
         },
         body: JSON.stringify({
-            messages: [{
-                role: 'user',
-                content: [
-                    { type: 'text', text: prompt },
-                    { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}`, detail: 'high' } }
-                ]
-            }],
-            max_tokens: 150,
-            temperature: 0.9
+            imageBase64: base64Image,
+            analysisId
         })
     });
     
@@ -1025,28 +1008,36 @@ RESPOND ONLY WITH JSON:
     console.log(`   ⏱️ Response time: ${elapsed}ms`);
     
     if (!response.ok) {
-        const error = await response.text();
-        console.error(`   ❌ GPT Error:`, error);
-        throw new Error('GPT request failed');
-    }
-    
-    const data = await response.json();
-    const content = data.choices[0]?.message?.content || '';
-    
-    console.log(`   📥 Raw response: ${content}`);
-    
-    try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
-            console.log(`   ✅ Parsed OK`);
-            return parsed;
+        let errorMessage = 'Analyze request failed';
+        try {
+            const errorJson = await response.json();
+            if (typeof errorJson?.error === 'string' && errorJson.error.trim()) {
+                errorMessage = errorJson.error;
+            }
+        } catch {
+            const errorText = await response.text();
+            if (errorText && errorText.trim()) {
+                errorMessage = errorText;
+            }
         }
-    } catch (e) {
-        console.error(`   ❌ JSON parse failed`);
+
+        if (response.status === 429) {
+            showToast('Rate limit hit: max 5 uploads/min per IP or device.', 'warning');
+        }
+
+        const error = errorMessage;
+        console.error('   ❌ Analyze API error:', error);
+        throw new Error(errorMessage);
     }
-    
-    return null;
+
+    const data = await response.json();
+
+    if (!data || typeof data.search !== 'string') {
+        throw new Error('Invalid analyze response');
+    }
+
+    console.log('   ✅ Analyze response received');
+    return data;
 }
 
 // ============================================
@@ -1054,16 +1045,11 @@ RESPOND ONLY WITH JSON:
 // ============================================
 
 async function searchTenor(query, analysisId) {
-    const CONFIG = getConfig();
-    
     console.log(`   🔍 Query: "${query}"`);
     
     try {
-        const apiKey = CONFIG.TENOR_API_KEY || 'AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCYQ';
         const searchQuery = encodeURIComponent(query);
-        const tenorUrl = `https://tenor.googleapis.com/v2/search?q=${searchQuery}&key=${apiKey}&limit=10&media_filter=gif`;
-        
-        const response = await fetch(tenorUrl);
+        const response = await fetch(`/api/meme?q=${searchQuery}&limit=10`);
         if (!response.ok) throw new Error('Tenor API error');
         
         const data = await response.json();
@@ -1686,10 +1672,7 @@ function loadGallery() {
     updateStorageInfo();
 
     if (history.length === 0) {
-        grid.innerHTML = `
-            <div class="empty-gallery">
-                <p>No roasts yet! Hit SNAP to get started.</p>
-            </div>`;
+        grid.innerHTML = '<div class="empty-gallery"><p>No roasts yet! Hit SNAP to get started.</p></div>';
         return;
     }
 
@@ -1701,33 +1684,72 @@ function loadGallery() {
         const date = new Date(item.timestamp);
         const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         
-        // Build image HTML
-        let imagesHtml = '';
+        const actions = document.createElement('div');
+        actions.className = 'gallery-item-actions';
+
+        const viewBtn = document.createElement('button');
+        viewBtn.className = 'gallery-action-btn';
+        viewBtn.title = 'View full size';
+        viewBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+        viewBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            openLightbox(item.memeUrl, item.caption);
+        });
+
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'gallery-action-btn';
+        retryBtn.title = 'Use this again';
+        retryBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>';
+        retryBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            retryHistoryItem(item.id);
+        });
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'gallery-action-btn delete';
+        deleteBtn.title = 'Delete';
+        deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+        deleteBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            deleteHistoryItem(item.id);
+        });
+
+        actions.appendChild(viewBtn);
+        actions.appendChild(retryBtn);
+        actions.appendChild(deleteBtn);
+
+        const imagePair = document.createElement('div');
+        imagePair.className = 'gallery-images-pair';
+        imagePair.addEventListener('click', () => showInMainView(item));
+
         if (item.userImage) {
-            imagesHtml += `<img src="${item.userImage}" class="gallery-thumb user-thumb" alt="You" loading="lazy">`;
+            const userImg = document.createElement('img');
+            userImg.className = 'gallery-thumb user-thumb';
+            userImg.loading = 'lazy';
+            userImg.alt = 'You';
+            userImg.src = item.userImage;
+            imagePair.appendChild(userImg);
         }
-        imagesHtml += `<img src="${item.memeUrl}" class="gallery-thumb meme-thumb" alt="Meme" loading="lazy">`;
-        
-        const escapedItem = JSON.stringify(item).replace(/"/g, '&quot;');
-        
-        div.innerHTML = `
-            <div class="gallery-item-actions">
-                <button class="gallery-action-btn" onclick="event.stopPropagation(); openLightbox('${item.memeUrl}', '${item.caption.replace(/'/g, "\\'")}')" title="View full size">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                </button>
-                <button class="gallery-action-btn" onclick="event.stopPropagation(); retryHistoryItem(${item.id})" title="Use this again">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                </button>
-                <button class="gallery-action-btn delete" onclick="event.stopPropagation(); deleteHistoryItem(${item.id})" title="Delete">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                </button>
-            </div>
-            <div class="gallery-images-pair" onclick="showInMainView(${escapedItem})">
-                ${imagesHtml}
-            </div>
-            <div class="gallery-caption">"${item.caption}"</div>
-            <div class="gallery-item-date">${dateStr}</div>
-        `;
+
+        const memeImg = document.createElement('img');
+        memeImg.className = 'gallery-thumb meme-thumb';
+        memeImg.loading = 'lazy';
+        memeImg.alt = 'Meme';
+        memeImg.src = item.memeUrl;
+        imagePair.appendChild(memeImg);
+
+        const captionDiv = document.createElement('div');
+        captionDiv.className = 'gallery-caption';
+        captionDiv.textContent = `"${item.caption}"`;
+
+        const dateDiv = document.createElement('div');
+        dateDiv.className = 'gallery-item-date';
+        dateDiv.textContent = dateStr;
+
+        div.appendChild(actions);
+        div.appendChild(imagePair);
+        div.appendChild(captionDiv);
+        div.appendChild(dateDiv);
         grid.appendChild(div);
     });
 }
